@@ -1,0 +1,5 @@
+{
+  "rust-analyzer.linkedProjects": ["src-tauri/Cargo.toml"],
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "files.exclude": { "src-tauri/target": true, "dist": true, "public/pdfjs": true }
+}

@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "1. Install dependencies",
+      "type": "shell",
+      "command": "npm install",
+      "problemMatcher": []
+    },
+    {
+      "label": "2. Run app (desktop window)",
+      "type": "shell",
+      "command": "npm run app:dev",
+      "isBackground": true,
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "3. Build Windows installer",
+      "type": "shell",
+      "command": "npm run app:build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run in browser (quick UI preview)",
+      "type": "shell",
+      "command": "npm run dev",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Run tests",
+      "type": "shell",
+      "command": "npm run typecheck; npm test",
+      "problemMatcher": ["$tsc"],
+      "group": "test"
+    }
+  ]
+}
