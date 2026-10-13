@@ -44,6 +44,8 @@ export interface LoadedDoc {
   task: { destroy(): Promise<void> };
   numPages: number;
   encrypted: boolean;
+  /** The password it was opened with (memory only), to protect saved copies the same way. */
+  password?: string;
 }
 
 export type PasswordPrompt = (reason: "need" | "incorrect") => Promise<string | null>;
@@ -96,11 +98,15 @@ export class DocumentStore {
       useSystemFonts: true,
     } as Parameters<typeof getDocument>[0]);
     let encrypted = false;
+    let password: string | undefined;
     task.onPassword = (update: (pw: string) => void, reason: number) => {
       encrypted = true;
       askPassword(reason === PasswordResponses.INCORRECT_PASSWORD ? "incorrect" : "need").then((pw) => {
         if (pw === null) task.destroy();
-        else update(pw);
+        else {
+          password = pw;
+          update(pw);
+        }
       });
     };
     task.onProgress = ({ loaded, total }: { loaded: number; total: number }) => {
@@ -124,7 +130,7 @@ export class DocumentStore {
         /* ignore */
       }
     }
-    const doc: LoadedDoc = { id: uid("doc"), source, pdf, task, numPages: pdf.numPages, encrypted };
+    const doc: LoadedDoc = { id: uid("doc"), source, pdf, task, numPages: pdf.numPages, encrypted, password };
     this.docs.set(doc.id, doc);
     this.transports.set(doc.id, transport);
     opened = doc;

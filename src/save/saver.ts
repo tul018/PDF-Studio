@@ -2,6 +2,7 @@ import type { DocumentStore } from "../core/documents";
 import type { Annotation, EditState, FormValue, PageRef, StoredImage } from "../edit/model";
 import { TEXT_FONTS, textLines } from "../edit/model";
 import type { PlanPage, SavePlan } from "./applyEdits";
+import type { Protection } from "./encrypt";
 import SaveWorker from "./save.worker?worker";
 
 /** Characters outside printable ASCII + Latin-1 can't use the built-in font. */
@@ -11,6 +12,8 @@ const RASTER_MAX_PIXELS = 12 * 1024 * 1024;
 export interface SaveOptions {
   pages?: readonly PageRef[]; // subset (extract); default = all
   onProgress?: (label: string, fraction: number) => void;
+  /** Protect the saved file with a password. */
+  protect?: Protection;
 }
 
 /**
@@ -86,7 +89,7 @@ export async function buildPdf(
     if (im) imgs[id] = { bytes: im.bytes.slice(), mime: im.mime };
   }
 
-  const plan: SavePlan = { sources, pages: planPages, formValues, images: imgs, textImages };
+  const plan: SavePlan = { sources, pages: planPages, formValues, images: imgs, textImages, protect: opts.protect };
   progress("Writing PDF", 0);
   return runWorker(plan, transfer, (f) => progress("Writing PDF", f));
 }

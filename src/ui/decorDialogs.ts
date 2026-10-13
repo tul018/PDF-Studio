@@ -513,3 +513,50 @@ export function cutDialog(selected: number, total: number, preview: (canvas: HTM
     });
   });
 }
+
+// ------------------------------------------------------------------ password
+
+/** Choose a password (typed twice) and what is allowed without the owner password. */
+export function protectDialog(): Promise<import("../save/encrypt").Protection | null> {
+  return new Promise((resolve) => {
+    modal((box, close) => {
+      title(box, "Protect with a password", "Saves a copy that asks for this password when opened (AES-256, works in Adobe Reader, Edge, Chrome and phones). Don't forget it: it can't be recovered.");
+      const field = (label: string) => {
+        const i = document.createElement("input");
+        i.type = "password";
+        i.className = "modal-input";
+        i.autocomplete = "new-password";
+        row(box, label, i);
+        return i;
+      };
+      const p1 = field("Password");
+      const p2 = field("Type it again");
+      const show = check(box, "Show password", false);
+      show.addEventListener("change", () => (p1.type = p2.type = show.checked ? "text" : "password"));
+      const print = check(box, "Allow printing", true);
+      const copy = check(box, "Allow copying text", true);
+      const edit = check(box, "Allow changes", true);
+      const msg = document.createElement("p");
+      msg.className = "small error-text";
+      box.appendChild(msg);
+      const done = (v: import("../save/encrypt").Protection | null) => {
+        close();
+        resolve(v);
+      };
+      escClose(box, () => done(null));
+      buttons(box, [
+        { label: "Cancel", onClick: () => done(null) },
+        {
+          label: "Save protected copy",
+          primary: true,
+          onClick: () => {
+            if (p1.value.length < 4) return void ((msg.textContent = "Use at least 4 characters."), p1.focus());
+            if (p1.value !== p2.value) return void ((msg.textContent = "The two passwords are different."), p2.focus());
+            done({ userPassword: p1.value, allowPrint: print.checked, allowCopy: copy.checked, allowEdit: edit.checked });
+          },
+        },
+      ]);
+      requestAnimationFrame(() => p1.focus());
+    });
+  });
+}

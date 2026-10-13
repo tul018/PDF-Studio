@@ -22,6 +22,7 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import { rotVec, textLines, type Annotation, type Box, type FormValue } from "../edit/model";
+import { saveEncrypted, type Protection } from "./encrypt";
 import { copyDocumentStructure, detachPageLinks, pruneUnreachable, relinkPage, type PageTarget } from "./structure";
 
 /**
@@ -50,6 +51,8 @@ export interface SavePlan {
   images: Record<string, { bytes: Uint8Array; mime: string }>;
   /** Annotation id -> pre-rendered PNG for text the standard font can't encode (Thai, CJK, emoji...). */
   textImages: Record<string, Uint8Array>;
+  /** Save with a password (AES-256). */
+  protect?: Protection;
 }
 
 export type Progress = (done: number, total: number) => void;
@@ -156,6 +159,17 @@ export async function applyEdits(plan: SavePlan, onProgress: Progress = () => {}
   onProgress(total, total);
   if (!identity) pruneUnreachable(out);
 
+  if (plan.protect) {
+    // Field appearances must exist before encrypting (pdf-lib makes them on save).
+    if (out.catalog.get(PDFName.of("AcroForm"))) {
+      try {
+        out.getForm().updateFieldAppearances();
+      } catch {
+        out.getForm().acroForm.dict.set(PDFName.of("NeedAppearances"), PDFBool.True);
+      }
+    }
+    return saveEncrypted(out, plan.protect);
+  }
   try {
     return await out.save({ useObjectStreams: true });
   } catch (e) {

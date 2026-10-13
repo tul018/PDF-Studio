@@ -92,7 +92,7 @@ Picked for everyday shop work: Shopee/Lazada shipping labels on a TSC label prin
 8. ✅ **Split a PDF into several files** (done: every N pages or ranges like 1-3, 4-10, 11-; split in a worker; each part keeps its bookmarks and metadata) by page ranges or every N pages (today: extract selected pages only). Effort: small.
 9. ✅ **Cut pages into pieces** (done: Pages panel; vertical + horizontal cut by %, live preview, current/selected/all pages): a vertical and a horizontal cut at the same time, each set by percentage, on selected pages or all; each piece becomes its own page (2-up scans, A3 spreads, label sheets). Non-destructive (crop per page), undoable, saved as cropped pages.
 10. **Translate Chinese supplier documents to Thai or English.** Optional, opt-in only: needs an AI service, so documents would leave the PC (see "AI features" below).
-11. **Password protection on save** (item 5 below).
+11. ✅ **Password protection on save** (done: see item 5 below).
 
 ### General and professional users
 
@@ -162,7 +162,7 @@ These are significant features that need more work, or a native SDK, to do prope
 2. **Certificate-based digital signatures** (PAdES/PKI). The current Sign tool places a handwritten signature image, which is legally weaker.
 3. **Editing existing text in place.** Today you cover it with white-out and type over it.
 4. **Native PDF annotations for every type**, so others can edit them. Only comments are native today; everything else is flattened into the page.
-5. **Password protection on save** (requested). Today the app can only *open* protected PDFs. Planned:
+5. ✅ **Password protection on save** (done: "Protect with password" saves an AES-256 copy, R6/AESV3, with print/copy/change permissions; editing a protected PDF keeps its password by default). Still open: keeping *real text* when editing a protected PDF needs decrypting the source (today its pages are saved as images). Original plan:
    - a "Protect with password" option when saving, with standard AES-256 encryption (opens in Adobe Reader, Edge, phones), probably done on the Rust side so large files stay fast;
    - edited protected PDFs keep their password and stay real, searchable text, instead of becoming an unprotected image-based copy as now (pdf-lib cannot encrypt);
    - ✅ until then, a clear warning before any save that removes protection (done: confirm dialog "Save without the password?").

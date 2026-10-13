@@ -29,7 +29,8 @@ import {
   type PageGeom,
 } from "./edit/pageDecor";
 import { renderWatermark } from "./edit/stamps";
-import { cutDialog, exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
+import type { Protection } from "./save/encrypt";
+import { cutDialog, protectDialog, exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
 import { cutPages } from "./edit/cut";
 import { forgetRecent, mapDocIds, newTab, recentFiles, rememberRecent, TabBar, type Tab, type TabSnapshot } from "./tabs";
 import { pagesToImages, splitInWorker } from "./save/pages";
@@ -624,18 +625,27 @@ export class App {
   // ================================================================ save
 
   /** Returns true when saved. */
-  async save(asNew: boolean): Promise<boolean> {
+  async save(asNew: boolean, protect?: Protection): Promise<boolean> {
     if (!this.mainDoc) return false;
     for (const p of this.panes) p.overlay.commitTextEdit();
     const usedDocs = [...new Set(this.history.state.pages.map((p) => p.docId))];
-    if (usedDocs.some((id) => id && this.store.docs.get(id)?.encrypted)) {
-      // pdf-lib can't encrypt (roadmap: password on save): say so plainly before it happens.
-      const ok = await confirmDialog(
-        "Save without the password?",
-        "This PDF is password-protected. PDF Studio can't add passwords yet, so the saved file will open WITHOUT a password, and its pages are saved as images (text can't be selected or searched). The original file is not changed if you save a copy.",
-        "Save without password",
+    const locked = usedDocs.map((id) => (id ? this.store.docs.get(id) : undefined)).find((d) => d?.encrypted);
+    if (locked && !protect) {
+      // Keep the protection by default, with the password it was opened with.
+      const c = await choiceDialog(
+        "This PDF is password-protected",
+        "Save it with the same password? (Its pages are saved as images, so text can't be selected or searched yet.)",
+        ["Cancel", "Remove the password", "Keep the password"],
       );
-      if (!ok) return false;
+      if (c === 0) return false;
+      if (c === 2) {
+        if (locked.password) protect = { userPassword: locked.password };
+        else {
+          const p = await protectDialog();
+          if (!p) return false;
+          protect = p;
+        }
+      }
     }
     const totalBytes = usedDocs
       .map((id) => (id ? (this.store.docs.get(id)?.source.size ?? 0) : 0))
@@ -653,6 +663,7 @@ export class App {
     try {
       const bytes = await buildPdf(this.history.state, this.store, this.images, {
         onProgress: (l, f) => busy.update(l, f),
+        protect,
       });
       busy.close();
       const name = this.mainDoc.source.name.replace(/(\.pdf)?$/i, ".pdf");
@@ -1346,6 +1357,8 @@ export class App {
         return void this.print();
       case "labels":
         return void this.printLabels();
+      case "protect":
+        return void protectDialog().then((p) => p && this.save(true, p));
       case "stamp":
         return void this.addStamp();
       case "pageNumbers":
