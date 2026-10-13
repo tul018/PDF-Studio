@@ -71,7 +71,9 @@ export class BytesSource implements PdfSource {
     return this.bytes.byteLength;
   }
   async readRange(begin: number, end: number) {
-    return this.bytes.subarray(begin, end);
+    // A copy: PDF.js takes over (detaches) the buffers it is given, and these
+    // bytes are still needed (saving, OCR...).
+    return this.bytes.slice(begin, end);
   }
   async readAll() {
     return this.bytes;

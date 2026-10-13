@@ -681,3 +681,42 @@ export function settingsDialog(v: SettingsValues): Promise<(SettingsValues & { r
     });
   });
 }
+
+// ------------------------------------------------------------------ OCR
+
+const OCR_KEY = "pdfstudio:ocr";
+
+export function ocrDialog(selected: number, total: number): Promise<{ pages: PageChoice; langs: ("tha" | "eng" | "chi_sim")[]; skipText: boolean } | null> {
+  const o = remember(OCR_KEY, { pages: "all" as PageChoice, tha: true, eng: true, chi_sim: false, skipText: true });
+  return new Promise((resolve) => {
+    modal((box, close) => {
+      title(box, "Recognize text (OCR)", "Makes scanned pages searchable and copyable, offline. A searchable copy opens in a new tab; the pages look the same.");
+      const pages = pageChoice(box, selected, total, o.pages);
+      const tha = check(box, "Thai", o.tha);
+      const eng = check(box, "English", o.eng);
+      const chi = check(box, "Chinese (simplified)", o.chi_sim);
+      const skip = check(box, "Skip pages that already have text", o.skipText);
+      const msg = document.createElement("p");
+      msg.className = "small error-text";
+      box.appendChild(msg);
+      const done = (v: { pages: PageChoice; langs: ("tha" | "eng" | "chi_sim")[]; skipText: boolean } | null) => {
+        close();
+        resolve(v);
+      };
+      escClose(box, () => done(null));
+      buttons(box, [
+        { label: "Cancel", onClick: () => done(null) },
+        {
+          label: "Recognize",
+          primary: true,
+          onClick: () => {
+            const langs = [tha.checked && "tha", eng.checked && "eng", chi.checked && "chi_sim"].filter(Boolean) as ("tha" | "eng" | "chi_sim")[];
+            if (!langs.length) return void (msg.textContent = "Choose at least one language.");
+            store(OCR_KEY, { pages: pages.value, tha: tha.checked, eng: eng.checked, chi_sim: chi.checked, skipText: skip.checked });
+            done({ pages: pages.value as PageChoice, langs, skipText: skip.checked });
+          },
+        },
+      ]);
+    });
+  });
+}

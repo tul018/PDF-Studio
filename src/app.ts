@@ -33,7 +33,8 @@ import type { Protection } from "./save/encrypt";
 import { imagesToPdf } from "./save/fromImages";
 import { BytesSource } from "./core/source";
 import { currentLanguage, initialLanguage, setLanguage } from "./ui/i18n";
-import { cutDialog, protectDialog, photosDialog, settingsDialog, shrinkDialog, exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
+import { ocrPdf } from "./save/ocr";
+import { cutDialog, ocrDialog, protectDialog, photosDialog, settingsDialog, shrinkDialog, exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
 import { cutPages } from "./edit/cut";
 import { forgetRecent, mapDocIds, newTab, recentFiles, rememberRecent, TabBar, type Tab, type TabSnapshot } from "./tabs";
 import { pagesToImages, shrinkInWorker, splitInWorker } from "./save/pages";
@@ -792,6 +793,31 @@ export class App {
     }
   }
 
+  /** OCR: a searchable copy (invisible text over scanned pages), opened in a new tab. */
+  async recognizeText(): Promise<void> {
+    if (!this.mainDoc) return;
+    const s = this.history.state;
+    const sel = this.thumbs.selected;
+    const o = await ocrDialog(sel.size, s.pages.length);
+    if (!o) return;
+    const pages =
+      o.pages === "all" ? s.pages.map((_, i) => i) : o.pages === "selected" ? s.pages.flatMap((p, i) => (sel.has(p.id) ? [i] : [])) : [this.activeViewer.currentIndex];
+    const busy = progressOverlay("Preparing…");
+    try {
+      const bytes = await buildPdf(s, this.store, this.images, { onProgress: (_l, f) => busy.update("Preparing…", f * 0.1) });
+      const r = await ocrPdf(bytes, { langs: o.langs, pages, skipText: o.skipText }, (label, f) => busy.update(label, 0.1 + f * 0.9));
+      busy.close();
+      if (!r.recognized) return toast(`Nothing to recognize: ${r.skipped} page${r.skipped === 1 ? "" : "s"} already have text.`, "info", 6000);
+      await this.openSources([new BytesSource(`${this.outputBase().base} (searchable).pdf`, r.bytes)]);
+      toast(`Text recognized on ${r.recognized} page${r.recognized === 1 ? "" : "s"}. This searchable copy opened in a new tab: save it with Ctrl+S.`, "ok", 8000);
+    } catch (e) {
+      console.error(e);
+      toast(`Text recognition failed: ${(e as Error)?.message ?? e}`, "error", 8000);
+    } finally {
+      busy.close();
+    }
+  }
+
   /** Save a smaller copy (pictures re-compressed in a worker). */
   async shrink(): Promise<void> {
     if (!this.mainDoc) return;
@@ -1486,6 +1512,8 @@ export class App {
         return void this.print();
       case "labels":
         return void this.printLabels();
+      case "ocr":
+        return void this.recognizeText();
       case "shrink":
         return void this.shrink();
       case "settings":

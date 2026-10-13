@@ -11,3 +11,4 @@ src-tauri/gen/
 bench-results/
 tests/fixtures/catalogs/
 tests/fixtures/*.png
+public/tesseract/
