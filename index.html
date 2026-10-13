@@ -83,6 +83,8 @@
       <button class="tool sel-only" data-action="deleteSel" data-icon="trash" title="Delete selected (Del)"><span>Delete</span></button>
     </div>
 
+    <nav id="tabbar" class="tabbar" role="tablist" aria-label="Open files"></nav>
+
     <div class="main">
       <aside id="sidebar" aria-label="Sidebar">
         <div class="tabs" role="tablist">
@@ -141,6 +143,10 @@
           <button class="btn primary big" data-action="open">Open PDF…</button>
           <p class="muted small">or drop a file anywhere</p>
           <button class="btn" data-action="folderSearch">Search a folder of PDFs…</button>
+          <div id="recent" class="recent" hidden>
+            <h2 class="recent-title">Recent</h2>
+            <ul id="recent-list" class="recent-list"></ul>
+          </div>
         </div>
       </div>
     </div>

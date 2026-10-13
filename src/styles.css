@@ -53,7 +53,7 @@ body {
   background: var(--bg);
   color: var(--text);
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) var(--status-h);
+  grid-template-rows: auto auto auto minmax(0, 1fr) var(--status-h);
   grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
   overscroll-behavior: none;
@@ -120,8 +120,27 @@ select, .page-input, .modal-input, .searchbar input[type="search"] {
 /* ---------------------------------------------------------------- layout */
 .main-bar { grid-row: 1; }
 .tool-bar { grid-row: 2; }
-.main { grid-row: 3; }
-.statusbar { grid-row: 4; }
+.tabbar { grid-row: 3; }
+.main { grid-row: 4; }
+.statusbar { grid-row: 5; }
+/* Tabs (shown when two or more files are open) */
+.tabbar { display: none; align-items: stretch; gap: 2px; padding: 4px 6px 0; background: var(--surface-2); border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: thin; }
+body.has-tabs .tabbar { display: flex; }
+.tab { display: flex; align-items: center; gap: 4px; max-width: 220px; min-width: 90px; padding: 4px 4px 4px 10px; border: 1px solid var(--border); border-bottom: 0; border-radius: 8px 8px 0 0; background: var(--surface-2); cursor: pointer; font-size: 13px; color: var(--muted); }
+.tab.active { background: var(--surface); color: var(--text); }
+.tab-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-close, .tab-new { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 16px; line-height: 1; padding: 2px 6px; border-radius: 4px; }
+.tab-close:hover, .tab-new:hover { background: var(--border); color: var(--text); }
+/* Recent files on the start screen */
+.recent { margin-top: 20px; text-align: left; }
+.recent[hidden] { display: none; }
+.recent-title { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 6px; }
+.recent-list { list-style: none; margin: 0; padding: 0; max-height: 40vh; overflow: auto; }
+.recent-item { display: flex; align-items: center; gap: 4px; }
+.recent-open { flex: 1; min-width: 0; border: 0; background: none; text-align: left; padding: 6px 8px; border-radius: 6px; cursor: pointer; color: inherit; }
+.recent-open:hover { background: var(--surface-2); }
+.recent-name { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-path { display: block; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .main { position: relative; display: flex; min-height: 0; min-width: 0; overflow: hidden; }
 #sidebar {
   width: var(--sidebar-w); flex: none; display: flex; flex-direction: column;

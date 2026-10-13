@@ -31,6 +31,7 @@ import {
 import { renderWatermark } from "./edit/stamps";
 import { cutDialog, exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
 import { cutPages } from "./edit/cut";
+import { forgetRecent, mapDocIds, newTab, recentFiles, rememberRecent, TabBar, type Tab, type TabSnapshot } from "./tabs";
 import { pagesToImages, splitInWorker } from "./save/pages";
 import { splitParts } from "./save/split";
 import { clearDraft, loadDraft, saveDraft } from "./edit/recovery";
@@ -100,6 +101,9 @@ export class App {
   private fileVersion = "";
   private canvasChangePending = false;
   private folderPanel!: FolderPanel;
+  private tabs: Tab[] = [];
+  private activeTab = -1;
+  private tabBar!: TabBar;
   private panes: Pane[] = [];
   private active = 0;
   private thumbs!: Thumbnails;
@@ -148,6 +152,10 @@ export class App {
       );
     };
 
+    this.tabBar = new TabBar($("#tabbar"));
+    this.tabBar.onSelect = (i) => void this.switchTab(i);
+    this.tabBar.onClose = (i) => void this.closeTab(i);
+    this.tabBar.onNew = () => void this.open();
     this.folderPanel = new FolderPanel($('[data-panel="folder"]'), this.platform);
     this.folderPanel.onOpen = (source, pageIndex, query) => void this.openSearchResult(source, pageIndex, query);
     this.bindToolbar();
@@ -174,7 +182,7 @@ export class App {
       },
     };
     window.addEventListener("beforeunload", (e) => {
-      if (this.history.dirty) {
+      if (this.history.dirty || this.tabs.some((t) => t.snapshot?.dirty)) {
         e.preventDefault();
         e.returnValue = "";
       }
@@ -334,19 +342,132 @@ export class App {
     if (files.length) await this.openSources(files);
   }
 
+  /**
+   * Open files. "replace": into a new tab when a file is already open (that
+   * one stays in its tab, edits and all), or into the current tab when none
+   * is; a file that is already open in a tab is switched to instead.
+   * "merge": add their pages to the open document.
+   */
   async openSources(sources: PdfSource[], mode: "replace" | "merge" = "replace"): Promise<void> {
     if (mode === "replace") {
-      if (this.history.dirty) {
-        const c = await choiceDialog("Unsaved changes", "Save your changes before opening another file?", [
-          "Cancel",
-          "Discard",
-          "Save",
-        ]);
-        if (c === 0) return;
-        if (c === 2 && !(await this.save(false))) return;
+      const key = fileKeyOf(sources[0]);
+      const already = this.tabs.findIndex((t) => t.sources[0] && fileKeyOf(t.sources[0]) === key);
+      if (already >= 0 && sources.length === 1) {
+        // Reopened after saving over it: load the new version into its own tab.
+        if (already === this.activeTab && !this.mainDoc) return this.loadIntoTab(sources, null);
+        if (already !== this.activeTab) await this.switchTab(already);
+        return;
+      }
+      if (this.mainDoc) {
+        this.stashCurrent();
+        this.tabs.push(newTab(sources));
+        this.activeTab = this.tabs.length - 1;
+      } else if (this.activeTab < 0) {
+        this.tabs.push(newTab(sources));
+        this.activeTab = this.tabs.length - 1;
       }
       await this.closeDocument();
+      return this.loadIntoTab(sources, null);
     }
+    return this.loadIntoTab(sources, null, "merge");
+  }
+
+  /** Put the open document away into its tab (a snapshot), freeing it. */
+  private stashCurrent(): void {
+    const tab = this.tabs[this.activeTab];
+    if (!tab || !this.mainDoc) return;
+    for (const p of this.panes) p.overlay.commitTextEdit();
+    const ids = [...this.store.docs.keys()];
+    tab.sources = ids.map((id) => this.store.docs.get(id)!.source);
+    const pos = this.activeViewer.position();
+    tab.snapshot = {
+      state: mapDocIds(this.history.state, (id) => `#${ids.indexOf(id)}`),
+      images: new Map(this.images),
+      dirty: this.history.dirty,
+      view: { ...pos, zoom: this.activeViewer.zoom },
+    };
+    if (tab.snapshot.dirty) this.writeDraftNow(); // crash safety for the tab's edits
+    this.images.clear(); // keep their blob URLs alive for the snapshot
+  }
+
+  async switchTab(i: number): Promise<void> {
+    if (i < 0 || i >= this.tabs.length) return;
+    if (i === this.activeTab && this.mainDoc) return;
+    this.stashCurrent();
+    await this.closeDocument();
+    this.activeTab = i;
+    const tab = this.tabs[i];
+    const snap = tab.snapshot;
+    tab.snapshot = null;
+    await this.loadIntoTab(tab.sources, snap);
+  }
+
+  async closeTab(i: number): Promise<void> {
+    const tab = this.tabs[i];
+    if (!tab) return;
+    const name = tab.sources[0]?.name ?? "this file";
+    if (i === this.activeTab && this.history.dirty) {
+      const c = await choiceDialog("Unsaved changes", `Save your changes to "${name}" before closing it?`, ["Cancel", "Discard", "Save"]);
+      if (c === 0) return;
+      if (c === 2 && !(await this.save(false))) return;
+      void clearDraft(this.fileKey);
+    } else if (i !== this.activeTab && tab.snapshot?.dirty) {
+      if (!(await confirmDialog("Discard changes?", `"${name}" has unsaved changes. Close it and lose them?`, "Discard and close"))) return;
+    }
+    if (i === this.activeTab) await this.closeDocument();
+    for (const im of tab.snapshot?.images.values() ?? []) URL.revokeObjectURL(im.url);
+    this.tabs.splice(i, 1);
+    if (i < this.activeTab) this.activeTab--;
+    else if (i === this.activeTab) {
+      this.activeTab = -1;
+      if (this.tabs.length) return this.switchTab(Math.min(i, this.tabs.length - 1));
+    }
+    this.renderTabs();
+    this.updateChrome();
+  }
+
+  private renderTabs(): void {
+    this.tabBar.render(this.tabs, this.activeTab, this.history.dirty);
+  }
+
+  /** The start screen's list of recent files (desktop). */
+  private renderRecent(): void {
+    const list = recentFiles();
+    $("#recent").hidden = !list.length || this.platform.kind !== "desktop";
+    const items = list.map((r) => {
+      const li = document.createElement("li");
+      li.className = "recent-item";
+      const b = document.createElement("button");
+      b.className = "recent-open";
+      const n = document.createElement("span");
+      n.className = "recent-name";
+      n.textContent = r.name;
+      const p = document.createElement("span");
+      p.className = "recent-path";
+      p.textContent = r.path;
+      b.append(n, p);
+      b.addEventListener("click", async () => {
+        try {
+          await this.openSources([await NativeSource.open(r.path)]);
+        } catch {
+          forgetRecent(r.path);
+          this.renderRecent();
+          toast(`"${r.name}" was moved or deleted.`, "error");
+        }
+      });
+      const x = document.createElement("button");
+      x.className = "tab-close";
+      x.textContent = "×";
+      x.title = "Remove from the list";
+      x.addEventListener("click", () => (forgetRecent(r.path), this.renderRecent()));
+      li.append(b, x);
+      return li;
+    });
+    $("#recent-list").replaceChildren(...items);
+  }
+
+  private async loadIntoTab(sources: PdfSource[], restore: TabSnapshot | null, mode: "replace" | "merge" = "replace"): Promise<void> {
+    const tab = this.tabs[this.activeTab];
     const busy = progressOverlay(`Opening ${sources[0].name}…`);
     try {
       const loaded: LoadedDoc[] = [];
@@ -355,12 +476,18 @@ export class App {
         loaded.push(
           await this.store.open(
             s,
-            (reason) =>
-              promptText(reason === "incorrect" ? "Incorrect password — try again" : "Password required", "", {
+            async (reason) => {
+              // Reopening a tab: use the password typed earlier this session.
+              const known = tab?.passwords.get(fileKeyOf(s));
+              if (known !== undefined && reason === "need") return known;
+              const pw = await promptText(reason === "incorrect" ? "Incorrect password — try again" : "Password required", "", {
                 password: true,
                 sub: `"${s.name}" is protected.`,
                 okLabel: "Unlock",
-              }),
+              });
+              if (pw !== null) tab?.passwords.set(fileKeyOf(s), pw);
+              return pw;
+            },
             (f) => busy.update(`Opening ${s.name}…`, f),
           ),
         );
@@ -376,11 +503,26 @@ export class App {
         this.lastPages = null;
         for (const p of this.panes) p.forms.reset();
         this.history.reset({ ...emptyState(), pages });
+        if (tab) tab.sources = sources;
+        rememberRecent(main.source);
+        if (restore) {
+          // Back to a tab: its edits, images and place, exactly as left.
+          const ids = loaded.map((d) => d.id);
+          const state = mapDocIds(restore.state, (tok) => ids[Number(tok.slice(1))] ?? tok);
+          for (const [k, v] of restore.images) this.images.set(k, v);
+          if (restore.dirty) this.history.push(state);
+          else this.history.reset(state);
+        }
         if (main.numPages <= 20000) this.store.scanSizes(main.id);
         this.marks.load(this.fileKey, `${main.source.name}:${main.source.size}`);
         this.renderOutline();
         document.title = `${main.source.name} — PDF Studio`;
         requestAnimationFrame(() => {
+          if (restore) {
+            this.activeViewer.setZoom(restore.view.zoom);
+            this.activeViewer.scrollToPosition(restore.view.index, restore.view.fy);
+            return;
+          }
           this.restoreView();
           void this.offerRecovery();
         });
@@ -1412,6 +1554,8 @@ export class App {
   private updateChrome(): void {
     const has = !!this.mainDoc;
     document.body.classList.toggle("has-doc", has);
+    this.renderTabs();
+    if (!has) this.renderRecent();
     $<HTMLButtonElement>('[data-action="undo"]').disabled = !this.history.canUndo;
     $<HTMLButtonElement>('[data-action="redo"]').disabled = !this.history.canRedo;
     document.querySelectorAll<HTMLButtonElement>("[data-needs-doc]").forEach((b) => (b.disabled = !has));
