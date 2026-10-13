@@ -30,7 +30,9 @@ import {
 } from "./edit/pageDecor";
 import { renderWatermark } from "./edit/stamps";
 import type { Protection } from "./save/encrypt";
-import { cutDialog, protectDialog, exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
+import { imagesToPdf } from "./save/fromImages";
+import { BytesSource } from "./core/source";
+import { cutDialog, protectDialog, photosDialog, exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
 import { cutPages } from "./edit/cut";
 import { forgetRecent, mapDocIds, newTab, recentFiles, rememberRecent, TabBar, type Tab, type TabSnapshot } from "./tabs";
 import { pagesToImages, splitInWorker } from "./save/pages";
@@ -750,6 +752,27 @@ export class App {
     }
   }
 
+  /** Pick photos/scans and make a new PDF of them (opens in a tab, unsaved). */
+  async pdfFromPhotos(): Promise<void> {
+    const files = await this.platform.pickImages();
+    if (!files.length) return;
+    const o = await photosDialog(files.length);
+    if (!o) return;
+    const busy = progressOverlay("Making PDF…");
+    try {
+      const bytes = await imagesToPdf(files, o, (f) => busy.update("Making PDF…", f));
+      busy.close();
+      const stamp = new Date().toISOString().slice(0, 16).replace("T", " ").replace(":", ".");
+      await this.openSources([new BytesSource(`Photos ${stamp}.pdf`, bytes)]);
+      toast(`PDF made from ${files.length} picture${files.length === 1 ? "" : "s"}. Save it with Ctrl+S.`, "ok", 5000);
+    } catch (e) {
+      console.error(e);
+      toast(`Could not make the PDF: ${(e as Error)?.message ?? e}`, "error", 8000);
+    } finally {
+      busy.close();
+    }
+  }
+
   /** Folder search result: open that file (unless it's the open one) at that page, word highlighted. */
   private async openSearchResult(source: PdfSource, pageIndex: number, query: string): Promise<void> {
     const same = () => !!this.mainDoc && fileKeyOf(this.mainDoc.source) === fileKeyOf(source);
@@ -1364,6 +1387,8 @@ export class App {
         return void this.print();
       case "labels":
         return void this.printLabels();
+      case "fromPhotos":
+        return void this.pdfFromPhotos();
       case "protect":
         return void protectDialog().then((p) => p && this.save(true, p));
       case "stamp":

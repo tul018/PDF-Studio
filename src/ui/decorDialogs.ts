@@ -560,3 +560,28 @@ export function protectDialog(): Promise<import("../save/encrypt").Protection | 
     });
   });
 }
+
+// ------------------------------------------------------------------ PDF from photos
+
+const PHOTOS_KEY = "pdfstudio:photos";
+
+export function photosDialog(count: number): Promise<{ trim: boolean; scanLook: boolean } | null> {
+  const o = remember(PHOTOS_KEY, { trim: true, scanLook: false });
+  return new Promise((resolve) => {
+    modal((box, close) => {
+      title(box, "Make a PDF from photos", `${count} picture${count === 1 ? "" : "s"}, one per A4 page, in the order chosen.`);
+      const trim = check(box, "Trim empty borders around each picture", o.trim);
+      const scan = check(box, "Scan look: clean black & white (receipts, documents)", o.scanLook);
+      const done = (v: { trim: boolean; scanLook: boolean } | null) => {
+        if (v) store(PHOTOS_KEY, v);
+        close();
+        resolve(v);
+      };
+      escClose(box, () => done(null));
+      buttons(box, [
+        { label: "Cancel", onClick: () => done(null) },
+        { label: "Make PDF", primary: true, onClick: () => done({ trim: trim.checked, scanLook: scan.checked }) },
+      ]);
+    });
+  });
+}

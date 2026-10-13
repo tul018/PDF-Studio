@@ -143,6 +143,27 @@ export class Platform {
     return { label: path, path, sources: list.map((e) => new NativeSource(e.path, e.size, e.modified)) };
   }
 
+  /** Several pictures, in the order chosen (camera roll / scans). */
+  async pickImages(): Promise<File[]> {
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.multiple = true;
+      input.accept = "image/png,image/jpeg,image/webp,image/heic,image/*";
+      input.style.display = "none";
+      input.addEventListener("change", () => {
+        resolve([...(input.files ?? [])]);
+        input.remove();
+      });
+      input.addEventListener("cancel", () => {
+        resolve([]);
+        input.remove();
+      });
+      document.body.appendChild(input);
+      input.click();
+    });
+  }
+
   async pickImage(): Promise<File | null> {
     return new Promise((resolve) => {
       const input = document.createElement("input");

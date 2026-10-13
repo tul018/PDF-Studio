@@ -100,7 +100,7 @@ Suggested next after the shop items, marked ★: they are used often, set a prof
 
 **Everyone**
 
-1. ★ **Make a PDF from photos or scans.** Pick phone photos or scanner images; pages are straightened, cropped and saved as one clean PDF.
+1. ✅ ★ **Make a PDF from photos or scans** (done: toolbar / start screen; one picture per A4 page, EXIF-upright, trim borders, scan look; automatic perspective straightening still to do). Pick phone photos or scanner images; pages are straightened, cropped and saved as one clean PDF.
 2. ★ **App menus in Thai and Chinese** (today only document content supports them; the UI is English).
 3. **Reading modes:** two pages side by side (book), single page at a time, and a night mode that darkens the pages themselves.
 4. **Read aloud** in Thai and English with the voices built into Windows.
