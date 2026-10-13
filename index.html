@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#1f2937" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <title>PDF Studio</title>
+  </head>
+  <body>
+    <header class="toolbar main-bar" role="toolbar" aria-label="Main">
+      <div class="group">
+        <button class="icon-btn" data-action="sidebar" data-icon="sidebar" title="Sidebar" data-needs-doc></button>
+        <button class="icon-btn" data-action="open" data-icon="open" title="Open (Ctrl+O)"><span class="lbl">Open</span></button>
+        <button class="icon-btn" data-action="save" data-icon="save" title="Save (Ctrl+S)" data-needs-doc><span class="lbl">Save</span></button>
+        <button class="icon-btn hide-sm" data-action="saveAs" title="Save a copy (Ctrl+Shift+S)" data-needs-doc><span class="lbl">Save as…</span></button>
+        <button class="icon-btn hide-sm" data-action="print" data-icon="print" title="Print (Ctrl+P)" data-needs-doc></button>
+        <span class="sep"></span>
+        <button class="icon-btn" data-action="undo" data-icon="undo" title="Undo (Ctrl+Z)"></button>
+        <button class="icon-btn" data-action="redo" data-icon="redo" title="Redo (Ctrl+Y)"></button>
+      </div>
+      <div class="group nav">
+        <button class="icon-btn" data-action="prev" data-icon="prev" title="Previous page" data-needs-doc></button>
+        <input id="page-input" class="page-input" inputmode="numeric" aria-label="Page number" />
+        <span id="page-total" class="page-total"></span>
+        <button class="icon-btn" data-action="next" data-icon="next" title="Next page" data-needs-doc></button>
+        <span class="sep hide-sm"></span>
+        <button class="icon-btn hide-sm" data-action="zoomOut" data-icon="zoomOut" title="Zoom out (Ctrl+-)" data-needs-doc></button>
+        <select id="zoom-select" aria-label="Zoom" data-needs-doc>
+          <option data-custom value="1">100%</option>
+          <option value="width">Fit width</option>
+          <option value="page">Fit page</option>
+          <option value="0.5">50%</option>
+          <option value="0.75">75%</option>
+          <option value="1">100%</option>
+          <option value="1.25">125%</option>
+          <option value="1.5">150%</option>
+          <option value="2">200%</option>
+          <option value="3">300%</option>
+          <option value="4">400%</option>
+        </select>
+        <button class="icon-btn hide-sm" data-action="zoomIn" data-icon="zoomIn" title="Zoom in (Ctrl++)" data-needs-doc></button>
+      </div>
+      <div class="group">
+        <button class="icon-btn" data-action="mark" data-icon="mark" title="Mark this position (Ctrl+D)" data-needs-doc><span class="lbl">Mark</span></button>
+        <button class="icon-btn" data-action="split" data-icon="split" title="Split view: compare two pages (Ctrl+\)" data-needs-doc><span class="lbl">Split</span></button>
+        <button class="icon-btn" data-action="search" data-icon="search" title="Find (Ctrl+F)" data-needs-doc></button>
+        <button class="icon-btn show-sm" data-action="tools" data-icon="ink" title="Edit tools" data-needs-doc></button>
+        <button class="icon-btn" data-action="theme" data-icon="moon" title="Light / dark"></button>
+      </div>
+    </header>
+
+    <div class="toolbar tool-bar" role="toolbar" aria-label="Edit tools">
+      <button class="tool" data-tool="select" data-icon="select" title="Select / text (V)" data-needs-doc><span>Select</span></button>
+      <button class="tool" data-tool="hand" data-icon="hand" title="Pan (H)" data-needs-doc><span>Pan</span></button>
+      <span class="sep"></span>
+      <button class="tool" data-tool="highlight" data-icon="highlight" title="Highlight (U) — or select text first" data-needs-doc><span>Highlight</span></button>
+      <button class="tool" data-tool="text" data-icon="text" title="Add text (T)" data-needs-doc><span>Text</span></button>
+      <button class="tool" data-tool="ink" data-icon="ink" title="Draw (P)" data-needs-doc><span>Draw</span></button>
+      <button class="tool" data-tool="rect" data-icon="rect" title="Rectangle (R)" data-needs-doc><span>Box</span></button>
+      <button class="tool" data-tool="ellipse" data-icon="ellipse" title="Ellipse (O)" data-needs-doc><span>Circle</span></button>
+      <button class="tool" data-tool="line" data-icon="line" title="Line (L)" data-needs-doc><span>Line</span></button>
+      <button class="tool" data-tool="arrow" data-icon="arrow" title="Arrow (A)" data-needs-doc><span>Arrow</span></button>
+      <button class="tool" data-tool="note" data-icon="note" title="Comment (N)" data-needs-doc><span>Comment</span></button>
+      <button class="tool" data-action="image" data-icon="image" title="Insert image" data-needs-doc><span>Image</span></button>
+      <button class="tool" data-action="signature" data-icon="sign" title="Sign" data-needs-doc><span>Sign</span></button>
+      <button class="tool" data-tool="whiteout" data-icon="whiteout" title="White-out (cover)" data-needs-doc><span>White-out</span></button>
+      <button class="tool" data-tool="redact" data-icon="redact" title="Redact (permanently removes content under the box on save)" data-needs-doc><span>Redact</span></button>
+      <span class="sep"></span>
+      <label class="opt" title="Color"><input id="opt-color" type="color" value="#e53935" /></label>
+      <label class="opt" title="Line width">
+        <select id="opt-width"><option value="1">1 pt</option><option value="2" selected>2 pt</option><option value="3">3 pt</option><option value="5">5 pt</option><option value="8">8 pt</option></select>
+      </label>
+      <label class="opt" title="Font size">
+        <select id="opt-font"><option>10</option><option>12</option><option selected>14</option><option>18</option><option>24</option><option>32</option></select>
+      </label>
+      <button class="tool sel-only" data-action="deleteSel" data-icon="trash" title="Delete selected (Del)"><span>Delete</span></button>
+    </div>
+
+    <div class="main">
+      <aside id="sidebar" aria-label="Sidebar">
+        <div class="tabs" role="tablist">
+          <button data-tab="pages" class="on" role="tab">Pages</button>
+          <button data-tab="outline" role="tab">Outline</button>
+          <button data-tab="marks" role="tab">Marks</button>
+        </div>
+        <div data-panel="pages" class="panel pages-panel">
+          <div class="pageops">
+            <span id="pageops-hint" class="muted small">Current page</span>
+            <div class="pageops-btns">
+              <button class="icon-btn small" data-page-op="rotL" data-icon="rotL" title="Rotate left"></button>
+              <button class="icon-btn small" data-page-op="rotR" data-icon="rotR" title="Rotate right"></button>
+              <button class="icon-btn small" data-page-op="up" data-icon="up" title="Move up"></button>
+              <button class="icon-btn small" data-page-op="down" data-icon="down" title="Move down"></button>
+              <button class="icon-btn small" data-page-op="blank" data-icon="plus" title="Insert blank page after current"></button>
+              <button class="icon-btn small" data-page-op="merge" data-icon="merge" title="Add pages from other PDF(s)"></button>
+              <button class="icon-btn small" data-page-op="extract" data-icon="extract" title="Extract selected pages to a new PDF"></button>
+              <button class="icon-btn small danger" data-page-op="delete" data-icon="trash" title="Delete page(s)"></button>
+            </div>
+          </div>
+          <div id="thumbs" class="thumbs" tabindex="0"></div>
+        </div>
+        <div data-panel="outline" class="panel" hidden>
+          <div id="outline" class="outline"></div>
+          <p id="outline-empty" class="muted empty-note">This document has no outline (table of contents).</p>
+        </div>
+        <div data-panel="marks" class="panel" hidden>
+          <button class="btn primary block" data-action="mark" data-needs-doc>+ Mark current position</button>
+          <ul id="marks-list" class="marks-list"></ul>
+          <p id="marks-empty" class="muted empty-note">No marks yet. Press <kbd>M</kbd> or <kbd>Ctrl</kbd>+<kbd>D</kbd> to mark where you are, then click a mark to jump back.</p>
+        </div>
+      </aside>
+
+      <section id="panes" class="panes"></section>
+
+      <div id="searchbar" class="searchbar" hidden>
+        <input id="search-input" type="search" placeholder="Find in document" aria-label="Find" />
+        <label class="check small" title="Match case"><input id="search-case" type="checkbox" /> Aa</label>
+        <span id="search-count" class="muted small"></span>
+        <button class="icon-btn small" data-action="searchPrev" data-icon="up" title="Previous (Shift+Enter)"></button>
+        <button class="icon-btn small" data-action="searchNext" data-icon="down" title="Next (Enter)"></button>
+        <button class="icon-btn small" data-action="searchClose" data-icon="close" title="Close"></button>
+      </div>
+
+      <div id="empty" class="empty">
+        <div class="empty-card">
+          <h1>PDF Studio</h1>
+          <p class="muted">Fast, stable viewing and editing — even for huge, image-heavy PDFs.</p>
+          <button class="btn primary big" data-action="open">Open PDF…</button>
+          <p class="muted small">or drop a file anywhere</p>
+        </div>
+      </div>
+    </div>
+
+    <footer class="statusbar">
+      <span id="status-file"></span>
+      <span id="status-page"></span>
+      <span id="status-zoom"></span>
+      <span id="status-mem" class="hide-sm"></span>
+    </footer>
+    <div id="dropzone" class="dropzone"><div>Drop PDF to open</div></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

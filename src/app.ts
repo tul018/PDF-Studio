@@ -1,0 +1,1132 @@
+import { CSS_UNITS, DocumentStore, type LoadedDoc } from "./core/documents";
+import { getProfile, type DeviceProfile } from "./core/deviceProfile";
+import { nextZoom } from "./core/layout";
+import { FileSource, type PdfSource } from "./core/source";
+import { History } from "./edit/history";
+import { Marks } from "./edit/marks";
+import {
+  deletePages,
+  emptyState,
+  insertPages,
+  movePages,
+  pagesForDoc,
+  rotatePages,
+  uid,
+  type EditState,
+  type PageRef,
+  type StoredImage,
+} from "./edit/model";
+import { AnnotationOverlay, type Tool } from "./edit/overlay";
+import { clearDraft, loadDraft, saveDraft } from "./edit/recovery";
+import { NativeSource, Platform } from "./platform/platform";
+import { buildPdf } from "./save/saver";
+import { choiceDialog, confirmDialog, progressOverlay, promptText, signaturePad, toast } from "./ui/dialogs";
+import { icon } from "./ui/icons";
+import { printPdf } from "./ui/print";
+import { FormLinkLayer } from "./viewer/formLayer";
+import { attachGestures } from "./viewer/gestures";
+import { Search } from "./viewer/search";
+import { Thumbnails } from "./viewer/thumbnails";
+import { Viewer, type Decorator, type Slot } from "./viewer/viewer";
+
+interface Pane {
+  root: HTMLDivElement;
+  head: HTMLDivElement;
+  scroller: HTMLDivElement;
+  viewer: Viewer;
+  overlay: AnnotationOverlay;
+  forms: FormLinkLayer;
+}
+
+const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) =>
+  root.querySelector(sel) as T;
+
+/** Marks shown as a small ribbon on the page edge. */
+class MarkRibbons implements Decorator {
+  constructor(private app: App) {}
+  decorate(slot: Slot): void {
+    slot.layers.querySelectorAll(".mark-ribbon").forEach((e) => e.remove());
+    const doc = this.app.mainDoc;
+    if (!doc || slot.ref.docId !== doc.id) return;
+    for (const m of this.app.marks.onPage(slot.ref.srcIndex)) {
+      const r = document.createElement("div");
+      r.className = "mark-ribbon";
+      r.style.top = `${m.fy * 100}%`;
+      r.style.setProperty("--mark", m.color);
+      r.title = m.label;
+      r.textContent = m.label;
+      slot.layers.appendChild(r);
+    }
+  }
+  undecorate(slot: Slot): void {
+    slot.layers.querySelectorAll(".mark-ribbon").forEach((e) => e.remove());
+  }
+}
+
+export class App {
+  readonly profile: DeviceProfile = getProfile();
+  readonly platform = new Platform(this.profile.isIOS);
+  readonly store = new DocumentStore();
+  readonly history = new History(emptyState());
+  readonly images = new Map<string, StoredImage>();
+  readonly marks = new Marks();
+  readonly search = new Search(this.store);
+  mainDoc: LoadedDoc | null = null;
+  private fileKey = "";
+  private panes: Pane[] = [];
+  private active = 0;
+  private thumbs!: Thumbnails;
+  private ribbons = new MarkRibbons(this);
+  private lastPages: readonly PageRef[] | null = null;
+  private draftTimer = 0;
+  private viewSaveTimer = 0;
+  private tool: Tool = "select";
+
+  constructor() {
+    this.renderIcons();
+    this.panes.push(this.createPane());
+    this.panes[0].root.classList.add("active");
+    const v0 = this.panes[0].viewer;
+    this.thumbs = new Thumbnails(
+      $("#thumbs"),
+      this.store,
+      v0.queue,
+      Math.min(2, window.devicePixelRatio || 1),
+      this.profile.isIOS ? 4 * 1024 * 1024 : 10 * 1024 * 1024,
+    );
+    this.thumbs.onNavigate = (i) => this.activeViewer.scrollToPage(i);
+    this.thumbs.onMove = (ids, to) => this.history.push(movePages(this.history.state, ids, to));
+    this.thumbs.onSelectionChange = () => this.updatePageOpsState();
+
+    this.history.subscribe((s) => this.onState(s));
+    this.marks.onChange = () => {
+      this.renderMarks();
+      for (const p of this.panes) p.viewer.redecorate();
+    };
+    this.search.onUpdate = (done, scanned, total) => this.onSearchUpdate(done, scanned, total);
+
+    this.bindToolbar();
+    this.bindKeyboard();
+    this.bindDragDrop();
+    this.bindSidebarTabs();
+    setInterval(() => this.updateMemoryStatus(), 1000);
+    // Live diagnostics for automated tests and support.
+    const app = this;
+    (window as unknown as { __pdfstudio: unknown }).__pdfstudio = {
+      get canvasPixels() {
+        return app.panes.reduce((n, p) => n + p.viewer.canvasPixels, 0);
+      },
+      get budget() {
+        return app.profile.canvasBudgetPixels;
+      },
+      get mounted() {
+        return app.panes.reduce((n, p) => n + p.viewer.mountedSlots().length, 0);
+      },
+      get pages() {
+        return app.history.state.pages.length;
+      },
+      get annotations() {
+        return app.history.state.annotations.length;
+      },
+    };
+    window.addEventListener("beforeunload", (e) => {
+      if (this.history.dirty) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden" && this.history.dirty) this.writeDraftNow();
+    });
+    this.applyTheme(localStorage.getItem("pdfstudio:theme"));
+    this.setTool("select");
+    this.updateChrome();
+    void this.platform.initialFiles().then((files) => {
+      if (files.length) void this.openSources(files);
+    });
+  }
+
+  get activePane(): Pane {
+    return this.panes[Math.min(this.active, this.panes.length - 1)];
+  }
+
+  get activeViewer(): Viewer {
+    return this.activePane.viewer;
+  }
+
+  // ================================================================ panes
+
+  private createPane(): Pane {
+    const root = document.createElement("div");
+    root.className = "pane";
+    const head = document.createElement("div");
+    head.className = "pane-head";
+    head.innerHTML = `
+      <span class="pane-title"></span>
+      <button class="icon-btn" data-pane-act="prev" title="Previous page">${icon("prev")}</button>
+      <input class="page-input" inputmode="numeric" aria-label="Page number" />
+      <span class="page-total"></span>
+      <button class="icon-btn" data-pane-act="next" title="Next page">${icon("next")}</button>
+      <button class="icon-btn" data-pane-act="zoomOut" title="Zoom out">${icon("zoomOut")}</button>
+      <span class="pane-zoom"></span>
+      <button class="icon-btn" data-pane-act="zoomIn" title="Zoom in">${icon("zoomIn")}</button>
+      <button class="icon-btn" data-pane-act="fit" title="Fit width">${icon("fitWidth")}</button>
+      <button class="icon-btn pane-close" data-pane-act="close" title="Close this pane">${icon("close")}</button>`;
+    const scroller = document.createElement("div");
+    scroller.className = "viewer";
+    scroller.tabIndex = 0;
+    root.append(head, scroller);
+    $("#panes").appendChild(root);
+
+    const viewer = new Viewer(scroller, this.store, this.profile);
+    const overlay = new AnnotationOverlay(viewer, this.history, this.images, this.search);
+    const forms = new FormLinkLayer(this.store, this.history);
+    viewer.addDecorator(overlay);
+    viewer.addDecorator(forms);
+    viewer.addDecorator(this.ribbons);
+    attachGestures(viewer);
+    const pane: Pane = { root, head, scroller, viewer, overlay, forms };
+
+    overlay.onRequestNoteText = (initial) =>
+      promptText(initial ? "Edit comment" : "Add comment", initial, { multiline: true, placeholder: "Comment…" });
+    overlay.onSelectionChange = (a) => {
+      if (a) for (const p of this.panes) if (p !== pane) p.overlay.select(null);
+      document.body.classList.toggle("has-selection", !!a);
+    };
+    forms.onLink = (url) => void this.platform.openExternal(url);
+    forms.onGoto = (docId, index) => {
+      const i = this.history.state.pages.findIndex((p) => p.docId === docId && p.srcIndex === index);
+      if (i >= 0) viewer.scrollToPage(i);
+    };
+    forms.onFormsDetected = () => toast("This PDF has fillable form fields — click a field to type.");
+    viewer.onPageChange = () => {
+      this.updatePageIndicators();
+      this.scheduleViewSave();
+    };
+    viewer.onZoomChange = () => this.updatePageIndicators();
+    viewer.onRenderError = (m) => toast(m, "error");
+
+    root.addEventListener("pointerdown", () => this.activate(pane), { capture: true });
+    root.addEventListener("focusin", () => this.activate(pane));
+    const input = $<HTMLInputElement>(".page-input", head);
+    input.addEventListener("change", () => this.gotoPageInput(input, viewer));
+    input.addEventListener("keydown", (e) => e.stopPropagation());
+    head.addEventListener("click", (e) => {
+      const act = (e.target as Element).closest<HTMLElement>("[data-pane-act]")?.dataset.paneAct;
+      if (!act) return;
+      if (act === "prev") viewer.prev();
+      if (act === "next") viewer.next();
+      if (act === "zoomIn") viewer.setZoom(nextZoom(viewer.zoom, 1));
+      if (act === "zoomOut") viewer.setZoom(nextZoom(viewer.zoom, -1));
+      if (act === "fit") viewer.setFit("width");
+      if (act === "close") this.closePane(pane);
+    });
+    for (const o of [overlay]) {
+      o.tool = this.tool;
+    }
+    return pane;
+  }
+
+  private activate(p: Pane): void {
+    const i = this.panes.indexOf(p);
+    if (i < 0 || i === this.active) return;
+    this.active = i;
+    this.panes.forEach((x, k) => x.root.classList.toggle("active", k === i));
+    this.updatePageIndicators();
+  }
+
+  /** Split view: a second, independent view of the same document. */
+  toggleSplit(): void {
+    if (this.panes.length > 1) {
+      this.closePane(this.panes[1]);
+      return;
+    }
+    if (!this.mainDoc) return;
+    const first = this.panes[0];
+    const p = this.createPane();
+    this.panes.push(p);
+    p.overlay.tool = this.tool;
+    p.overlay.options = first.overlay.options;
+    p.viewer.setPages(this.history.state.pages, false);
+    for (const x of this.panes) x.viewer.budgetShare = 0.5;
+    document.body.classList.add("split");
+    requestAnimationFrame(() => {
+      p.viewer.setFit("width");
+      // Start the second pane where the first one is; the user then jumps.
+      p.viewer.scrollToPage(first.viewer.currentIndex);
+      this.activate(p);
+      $<HTMLInputElement>(".page-input", p.head).focus();
+      $<HTMLInputElement>(".page-input", p.head).select();
+    });
+    this.updateChrome();
+    toast("Split view: each side scrolls and zooms on its own. Type a page number in the pane header to jump.");
+  }
+
+  private closePane(p: Pane): void {
+    if (this.panes.length < 2) return;
+    p.viewer.destroy();
+    p.root.remove();
+    this.panes = this.panes.filter((x) => x !== p);
+    this.active = 0;
+    this.panes[0].root.classList.add("active");
+    this.panes[0].viewer.budgetShare = 1;
+    document.body.classList.remove("split");
+    this.updateChrome();
+  }
+
+  // ================================================================ open
+
+  async open(multiple = false): Promise<void> {
+    const files = await this.platform.pickFiles(multiple);
+    if (files.length) await this.openSources(files);
+  }
+
+  async openSources(sources: PdfSource[], mode: "replace" | "merge" = "replace"): Promise<void> {
+    if (mode === "replace") {
+      if (this.history.dirty) {
+        const c = await choiceDialog("Unsaved changes", "Save your changes before opening another file?", [
+          "Cancel",
+          "Discard",
+          "Save",
+        ]);
+        if (c === 0) return;
+        if (c === 2 && !(await this.save(false))) return;
+      }
+      await this.closeDocument();
+    }
+    const busy = progressOverlay(`Opening ${sources[0].name}…`);
+    try {
+      const loaded: LoadedDoc[] = [];
+      for (const s of sources) {
+        busy.update(`Opening ${s.name}…`, 0);
+        loaded.push(
+          await this.store.open(
+            s,
+            (reason) =>
+              promptText(reason === "incorrect" ? "Incorrect password — try again" : "Password required", "", {
+                password: true,
+                sub: `"${s.name}" is protected.`,
+                okLabel: "Unlock",
+              }),
+            (f) => busy.update(`Opening ${s.name}…`, f),
+          ),
+        );
+      }
+      busy.close();
+      if (mode === "replace" || !this.mainDoc) {
+        const [main, ...rest] = loaded;
+        this.mainDoc = main;
+        this.fileKey = `${main.source.name}:${main.source.size}`;
+        let pages = pagesForDoc(main.id, main.numPages);
+        for (const d of rest) pages = pages.concat(pagesForDoc(d.id, d.numPages));
+        this.lastPages = null;
+        for (const p of this.panes) p.forms.reset();
+        this.history.reset({ ...emptyState(), pages });
+        if (main.numPages <= 20000) this.store.scanSizes(main.id);
+        this.marks.load(this.fileKey);
+        this.renderOutline();
+        document.title = `${main.source.name} — PDF Studio`;
+        requestAnimationFrame(() => {
+          this.restoreView();
+          void this.offerRecovery();
+        });
+        if (main.encrypted) toast("Protected PDF: edits will be saved as an image-based copy.", "info", 5000);
+      } else {
+        let s = this.history.state;
+        for (const d of loaded) s = insertPages(s, s.pages.length, pagesForDoc(d.id, d.numPages));
+        this.history.push(s);
+        toast(`Added ${loaded.reduce((n, d) => n + d.numPages, 0)} pages from ${loaded.length} file(s).`, "ok");
+        this.activeViewer.scrollToPage(this.history.state.pages.length - loaded.reduce((n, d) => n + d.numPages, 0));
+      }
+    } catch (e) {
+      busy.close();
+      console.error(e);
+      const name = (e as Error)?.name;
+      toast(
+        name === "InvalidPDFException"
+          ? "This file is not a valid PDF or is damaged."
+          : name === "PasswordException"
+            ? "The document could not be unlocked."
+            : `Could not open file: ${(e as Error)?.message ?? e}`,
+        "error",
+        6000,
+      );
+    }
+    this.updateChrome();
+  }
+
+  private async closeDocument(): Promise<void> {
+    this.search.clear();
+    this.search.invalidate();
+    $("#search-count").textContent = "";
+    for (const p of this.panes) {
+      p.overlay.select(null);
+      p.viewer.setPages([], false);
+    }
+    this.thumbs.setPages([]);
+    this.history.reset(emptyState());
+    for (const im of this.images.values()) URL.revokeObjectURL(im.url);
+    this.images.clear();
+    this.marks.clear();
+    await this.store.closeAll();
+    this.mainDoc = null;
+    $("#outline").replaceChildren();
+    document.title = "PDF Studio";
+  }
+
+  private async offerRecovery(): Promise<void> {
+    if (!this.mainDoc) return;
+    const draft = await loadDraft(this.fileKey, this.mainDoc.id);
+    if (!draft || (!draft.state.annotations.length && !Object.keys(draft.state.formValues).length && draft.state.pages.length === this.mainDoc.numPages && draft.state.pages.every((p, i) => p.srcIndex === i && !p.rotation))) return;
+    const when = new Date(draft.savedAt).toLocaleString();
+    const ok = await confirmDialog(
+      "Restore unsaved edits?",
+      `PDF Studio found edits to this file from ${when} that were never saved (the app may have been closed unexpectedly).`,
+      "Restore",
+      "Discard",
+    );
+    if (!ok) {
+      void clearDraft(this.fileKey);
+      return;
+    }
+    for (const [id, im] of Object.entries(draft.images)) {
+      const url = URL.createObjectURL(new Blob([im.bytes as BlobPart], { type: im.mime }));
+      this.images.set(id, { ...im, url });
+    }
+    this.history.push(draft.state);
+    toast("Edits restored.", "ok");
+  }
+
+  // ================================================================ state
+
+  private onState(s: EditState): void {
+    if (s.pages !== this.lastPages) {
+      this.lastPages = s.pages;
+      for (const p of this.panes) p.viewer.setPages(s.pages, true);
+      this.thumbs.setPages(s.pages);
+    }
+    for (const p of this.panes) {
+      p.viewer.redecorate();
+      p.forms.refreshValues(p.viewer.mountedSlots());
+    }
+    this.updateChrome();
+    if (this.history.dirty && this.mainDoc) {
+      clearTimeout(this.draftTimer);
+      this.draftTimer = window.setTimeout(() => this.writeDraftNow(), 3000);
+    }
+  }
+
+  private writeDraftNow(): void {
+    clearTimeout(this.draftTimer);
+    if (this.mainDoc && this.history.dirty) {
+      void saveDraft(this.fileKey, this.mainDoc.id, this.history.state, this.images);
+    }
+  }
+
+  // ================================================================ save
+
+  /** Returns true when saved. */
+  async save(asNew: boolean): Promise<boolean> {
+    if (!this.mainDoc) return false;
+    for (const p of this.panes) p.overlay.commitTextEdit();
+    const totalBytes = [...new Set(this.history.state.pages.map((p) => p.docId))]
+      .map((id) => (id ? (this.store.docs.get(id)?.source.size ?? 0) : 0))
+      .reduce((a, b) => a + b, 0);
+    const limit = (this.profile.isIOS ? 350 : 1500) * 1024 * 1024;
+    if (totalBytes > limit) {
+      const ok = await confirmDialog(
+        "Very large file",
+        `Saving needs to load the full ${(totalBytes / 1048576).toFixed(0)} MB into memory, which may fail on this device. Continue?`,
+        "Save anyway",
+      );
+      if (!ok) return false;
+    }
+    const busy = progressOverlay("Preparing…");
+    try {
+      const bytes = await buildPdf(this.history.state, this.store, this.images, {
+        onProgress: (l, f) => busy.update(l, f),
+      });
+      busy.close();
+      const name = this.mainDoc.source.name.replace(/(\.pdf)?$/i, ".pdf");
+      const res = await this.platform.save(bytes, asNew ? name.replace(/\.pdf$/i, " (edited).pdf") : name, this.mainDoc.source, asNew);
+      if (!res) return false;
+      void clearDraft(this.fileKey);
+      if (res.inPlace && res.path) {
+        // The source file changed on disk: reopen it (edits are now part of it).
+        const pos = this.activeViewer.position();
+        const zoom = this.activeViewer.zoom;
+        this.history.markSaved();
+        await this.closeDocument();
+        await this.openSources([await NativeSource.open(res.path)]);
+        this.activeViewer.setZoom(zoom);
+        this.activeViewer.scrollToPosition(pos.index, pos.fy);
+      } else {
+        this.history.markSaved();
+      }
+      toast(`Saved ${res.name}${this.platform.kind === "ios" ? " to Files › On My iPhone/iPad › PDF Studio" : ""}`, "ok", 4500);
+      return true;
+    } catch (e) {
+      busy.close();
+      console.error(e);
+      toast(`Save failed: ${(e as Error)?.message ?? e}`, "error", 8000);
+      return false;
+    }
+  }
+
+  async print(): Promise<void> {
+    if (!this.mainDoc) return;
+    for (const p of this.panes) p.overlay.commitTextEdit();
+    const busy = progressOverlay("Preparing to print…");
+    const ac = new AbortController();
+    try {
+      const bytes = await buildPdf(this.history.state, this.store, this.images, {
+        onProgress: (_l, f) => busy.update("Preparing to print…", f * 0.3),
+      });
+      await printPdf(bytes, (f) => busy.update("Rendering pages for printing…", 0.3 + f * 0.7), ac.signal);
+    } catch (e) {
+      toast(`Print failed: ${(e as Error).message}`, "error");
+    } finally {
+      busy.close();
+    }
+  }
+
+  async extractSelected(): Promise<void> {
+    const pages = this.selectedPages();
+    if (!pages.length || !this.mainDoc) return;
+    const busy = progressOverlay("Extracting pages…");
+    try {
+      const bytes = await buildPdf(this.history.state, this.store, this.images, {
+        pages,
+        onProgress: (l, f) => busy.update(l, f),
+      });
+      busy.close();
+      const base = this.mainDoc.source.name.replace(/\.pdf$/i, "");
+      const res = await this.platform.save(bytes, `${base} (pages).pdf`, undefined, true);
+      if (res) toast(`Extracted ${pages.length} page(s) to ${res.name}`, "ok");
+    } catch (e) {
+      busy.close();
+      toast(`Extract failed: ${(e as Error).message}`, "error");
+    }
+  }
+
+  // ================================================================ page ops
+
+  private selectedPages(): PageRef[] {
+    const s = this.history.state;
+    const sel = this.thumbs.selected;
+    if (sel.size) return s.pages.filter((p) => sel.has(p.id));
+    const cur = s.pages[this.activeViewer.currentIndex];
+    return cur ? [cur] : [];
+  }
+
+  private pageOp(op: string): void {
+    if (!this.mainDoc) return;
+    const s = this.history.state;
+    const pages = this.selectedPages();
+    const ids = new Set(pages.map((p) => p.id));
+    switch (op) {
+      case "rotL":
+        this.history.push(rotatePages(s, ids, -90));
+        break;
+      case "rotR":
+        this.history.push(rotatePages(s, ids, 90));
+        break;
+      case "delete":
+        if (ids.size >= s.pages.length) return toast("A PDF must keep at least one page.", "error");
+        this.history.push(deletePages(s, ids));
+        this.thumbs.clearSelection();
+        toast(`Deleted ${ids.size} page(s). Undo with Ctrl+Z.`);
+        break;
+      case "up":
+      case "down": {
+        const first = s.pages.findIndex((p) => ids.has(p.id));
+        const to = op === "up" ? Math.max(0, first - 1) : first + 1;
+        this.history.push(movePages(s, ids, to));
+        break;
+      }
+      case "blank": {
+        const at = this.activeViewer.currentIndex + 1;
+        const cur = s.pages[at - 1];
+        const size = cur ? this.store.displaySize(cur) : { width: 612 * CSS_UNITS, height: 792 * CSS_UNITS };
+        const rotated = cur ? this.store.rotation(cur) % 180 !== 0 : false;
+        const w = (rotated ? size.height : size.width) / CSS_UNITS;
+        const h = (rotated ? size.width : size.height) / CSS_UNITS;
+        this.history.push(
+          insertPages(s, at, [{ id: uid("p"), docId: null, srcIndex: 0, rotation: 0, blank: { width: w, height: h } }]),
+        );
+        this.activeViewer.scrollToPage(at);
+        break;
+      }
+      case "merge":
+        void this.platform.pickFiles(true).then((files) => {
+          if (files.length) void this.openSources(files, "merge");
+        });
+        break;
+      case "extract":
+        void this.extractSelected();
+        break;
+    }
+  }
+
+  // ================================================================ tools
+
+  setTool(t: Tool): void {
+    this.tool = t;
+    for (const p of this.panes) p.overlay.setTool(t);
+    document.querySelectorAll<HTMLElement>("[data-tool]").forEach((b) => b.classList.toggle("on", b.dataset.tool === t));
+  }
+
+  private async addImage(): Promise<void> {
+    if (!this.mainDoc) return;
+    const file = await this.platform.pickImage();
+    if (!file) return;
+    const img = await this.storeImage(file);
+    if (img) this.activePane.overlay.placeImage(img.id, img.img);
+  }
+
+  private async addSignature(): Promise<void> {
+    if (!this.mainDoc) return;
+    const blob = await signaturePad();
+    if (!blob) return;
+    const img = await this.storeImage(blob);
+    if (img) this.activePane.overlay.placeImage(img.id, img.img, 160);
+  }
+
+  /** Decode, downscale huge photos (a 48 MP iPhone photo is 190 MB decoded), re-encode. */
+  private async storeImage(blob: Blob): Promise<{ id: string; img: StoredImage } | null> {
+    try {
+      const bmp = await createImageBitmap(blob);
+      const MAX = 2400;
+      const k = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
+      const w = Math.max(1, Math.round(bmp.width * k)),
+        h = Math.max(1, Math.round(bmp.height * k));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d")!.drawImage(bmp, 0, 0, w, h);
+      bmp.close();
+      const isPng = blob.type === "image/png";
+      const out = await new Promise<Blob>((r) => canvas.toBlob((b) => r(b!), isPng ? "image/png" : "image/jpeg", 0.9));
+      canvas.width = canvas.height = 0;
+      const bytes = new Uint8Array(await out.arrayBuffer());
+      const id = uid("img");
+      const img: StoredImage = {
+        bytes,
+        mime: isPng ? "image/png" : "image/jpeg",
+        width: w,
+        height: h,
+        url: URL.createObjectURL(out),
+      };
+      this.images.set(id, img);
+      return { id, img };
+    } catch (e) {
+      toast("This image format isn't supported.", "error");
+      console.warn(e);
+      return null;
+    }
+  }
+
+  // ================================================================ marks
+
+  async addMark(): Promise<void> {
+    const doc = this.mainDoc;
+    if (!doc) return;
+    const v = this.activeViewer;
+    const pos = v.position();
+    const ref = this.history.state.pages[pos.index];
+    if (!ref || ref.docId !== doc.id) return toast("Marks can be placed on pages of the main document.", "error");
+    const label = await promptText("Mark this position", `Page ${pos.index + 1}`, {
+      sub: "Give it a name so you can find it again in the Marks list.",
+      okLabel: "Add mark",
+    });
+    if (label === null) return;
+    this.marks.add(ref.srcIndex, pos.fy, label.trim() || `Page ${pos.index + 1}`);
+    this.showSidebarTab("marks");
+    toast("Mark added.", "ok");
+  }
+
+  gotoMark(id: string): void {
+    const m = this.marks.all.find((x) => x.id === id);
+    if (!m || !this.mainDoc) return;
+    const i = Marks.locate(m, this.history.state.pages, this.mainDoc.id);
+    if (i < 0) return toast("That page was deleted.", "error");
+    this.activeViewer.scrollToPosition(i, m.fy);
+  }
+
+  private renderMarks(): void {
+    const list = $("#marks-list");
+    list.replaceChildren();
+    const doc = this.mainDoc;
+    $("#marks-empty").hidden = this.marks.all.length > 0;
+    for (const m of this.marks.all) {
+      const i = doc ? Marks.locate(m, this.history.state.pages, doc.id) : -1;
+      const li = document.createElement("li");
+      li.className = "mark-item";
+      li.innerHTML = `
+        <button class="mark-go" title="Jump to this mark">
+          <span class="mark-dot" style="background:${m.color}"></span>
+          <span class="mark-label"></span>
+          <span class="mark-page">${i >= 0 ? `p. ${i + 1}` : "deleted"}</span>
+        </button>
+        <button class="icon-btn small" data-mark-act="rename" title="Rename">✎</button>
+        <button class="icon-btn small" data-mark-act="delete" title="Delete">${icon("trash")}</button>`;
+      $(".mark-label", li).textContent = m.label;
+      $(".mark-go", li).addEventListener("click", () => this.gotoMark(m.id));
+      li.querySelector('[data-mark-act="rename"]')!.addEventListener("click", async () => {
+        const label = await promptText("Rename mark", m.label);
+        if (label) this.marks.update(m.id, { label });
+      });
+      li.querySelector('[data-mark-act="delete"]')!.addEventListener("click", () => this.marks.remove(m.id));
+      list.appendChild(li);
+    }
+  }
+
+  // ================================================================ outline
+
+  private async renderOutline(): Promise<void> {
+    const root = $("#outline");
+    root.replaceChildren();
+    const doc = this.mainDoc;
+    if (!doc) return;
+    const outline = await doc.pdf.getOutline().catch(() => null);
+    $("#outline-empty").hidden = !!outline?.length;
+    if (!outline?.length) return;
+    type Node = (typeof outline)[number];
+    const build = (items: Node[], depth: number): HTMLUListElement => {
+      const ul = document.createElement("ul");
+      for (const it of items) {
+        const li = document.createElement("li");
+        const row = document.createElement("div");
+        row.className = "outline-row";
+        if (it.items?.length) {
+          const t = document.createElement("button");
+          t.className = "outline-toggle";
+          t.textContent = "▸";
+          t.addEventListener("click", () => {
+            li.classList.toggle("open");
+            t.textContent = li.classList.contains("open") ? "▾" : "▸";
+          });
+          row.appendChild(t);
+        } else {
+          const sp = document.createElement("span");
+          sp.className = "outline-spacer";
+          row.appendChild(sp);
+        }
+        const a = document.createElement("button");
+        a.className = "outline-link";
+        a.textContent = it.title || "(untitled)";
+        if (it.bold) a.style.fontWeight = "600";
+        if (it.italic) a.style.fontStyle = "italic";
+        a.addEventListener("click", () => void this.gotoOutline(it));
+        row.appendChild(a);
+        li.appendChild(row);
+        if (it.items?.length) li.appendChild(build(it.items, depth + 1));
+        if (depth === 0 && items.length < 12) li.classList.add("open");
+        ul.appendChild(li);
+      }
+      return ul;
+    };
+    root.appendChild(build(outline, 0));
+  }
+
+  private async gotoOutline(it: { dest: string | unknown[] | null; url: string | null }): Promise<void> {
+    const doc = this.mainDoc;
+    if (!doc) return;
+    if (it.url) return void this.platform.openExternal(it.url);
+    if (!it.dest) return;
+    try {
+      const dest = typeof it.dest === "string" ? await doc.pdf.getDestination(it.dest) : it.dest;
+      if (!dest) return;
+      const index =
+        typeof dest[0] === "number" ? dest[0] : await doc.pdf.getPageIndex(dest[0] as Parameters<typeof doc.pdf.getPageIndex>[0]);
+      const i = this.history.state.pages.findIndex((p) => p.docId === doc.id && p.srcIndex === index);
+      if (i < 0) return;
+      const kind = (dest[1] as { name?: string })?.name;
+      const top = kind === "XYZ" ? (dest[3] as number | null) : kind === "FitH" || kind === "FitBH" ? (dest[2] as number | null) : null;
+      if (typeof top === "number") {
+        const view = this.store.viewBox(this.history.state.pages[i]);
+        this.activeViewer.scrollToPage(i, [typeof dest[2] === "number" && kind === "XYZ" ? (dest[2] as number) : view[0], top]);
+      } else {
+        this.activeViewer.scrollToPage(i);
+      }
+    } catch (e) {
+      console.warn(e);
+    }
+  }
+
+  // ================================================================ search
+
+  private searchTimer = 0;
+
+  openSearch(): void {
+    const bar = $("#searchbar");
+    bar.hidden = false;
+    const input = $<HTMLInputElement>("#search-input");
+    const sel = window.getSelection()?.toString().trim();
+    if (sel && sel.length < 80) input.value = sel;
+    input.focus();
+    input.select();
+    if (input.value) this.runSearch();
+  }
+
+  closeSearch(): void {
+    $("#searchbar").hidden = true;
+    this.search.clear();
+    $("#search-count").textContent = "";
+    for (const p of this.panes) p.viewer.redecorate();
+  }
+
+  private runSearch(): void {
+    clearTimeout(this.searchTimer);
+    this.searchTimer = window.setTimeout(() => {
+      const q = $<HTMLInputElement>("#search-input").value;
+      const cs = $<HTMLInputElement>("#search-case").checked;
+      void this.search.run(q, this.history.state.pages, this.activeViewer.currentIndex, cs);
+    }, 220);
+  }
+
+  private onSearchUpdate(done: boolean, scanned: number, total: number): void {
+    const n = this.search.hits.length;
+    const el = $("#search-count");
+    if (!this.search.query.trim()) el.textContent = "";
+    else if (!done) el.textContent = `${n} found · searching ${Math.round((scanned / Math.max(1, total)) * 100)}%`;
+    else el.textContent = n ? `${this.search.currentHit + 1} of ${n}` : "No results";
+    for (const p of this.panes) p.viewer.redecorate();
+    if (done && n && this.search.currentHit >= 0) this.showHit(this.search.hits[this.search.currentHit]);
+  }
+
+  private stepSearch(dir: 1 | -1): void {
+    const hit = this.search.step(dir);
+    if (!hit) return;
+    $("#search-count").textContent = `${this.search.currentHit + 1} of ${this.search.hits.length}`;
+    this.showHit(hit);
+    for (const p of this.panes) p.viewer.redecorate();
+  }
+
+  private showHit(hit: { pageIndex: number; pageId: string; rects: number[][] }): void {
+    const i = this.history.state.pages.findIndex((p) => p.id === hit.pageId);
+    const r = hit.rects[0];
+    if (i >= 0) this.activeViewer.scrollToPage(i, r ? [r[0], r[1] + r[3]] : undefined);
+  }
+
+  // ================================================================ chrome
+
+  private renderIcons(): void {
+    document.querySelectorAll<HTMLElement>("[data-icon]").forEach((el) => {
+      el.insertAdjacentHTML("afterbegin", icon(el.dataset.icon!));
+    });
+  }
+
+  private bindToolbar(): void {
+    document.addEventListener("click", (e) => {
+      const el = (e.target as Element).closest<HTMLElement>("[data-action],[data-tool],[data-page-op]");
+      if (!el || (el as HTMLButtonElement).disabled) return;
+      if (el.dataset.tool) {
+        const t = el.dataset.tool as Tool;
+        if (t === "highlight" && this.tool === "select" && this.activePane.overlay.highlightSelection()) return;
+        return this.setTool(t);
+      }
+      if (el.dataset.pageOp) return this.pageOp(el.dataset.pageOp);
+      this.action(el.dataset.action!);
+    });
+    const pageInput = $<HTMLInputElement>("#page-input");
+    pageInput.addEventListener("change", () => this.gotoPageInput(pageInput, this.activeViewer));
+    pageInput.addEventListener("keydown", (e) => e.stopPropagation());
+    $<HTMLSelectElement>("#zoom-select").addEventListener("change", (e) => {
+      const v = (e.target as HTMLSelectElement).value;
+      if (v === "width" || v === "page") this.activeViewer.setFit(v);
+      else this.activeViewer.setZoom(parseFloat(v));
+    });
+    const opts = () => this.panes[0].overlay.options;
+    $<HTMLInputElement>("#opt-color").addEventListener("input", (e) => {
+      const c = (e.target as HTMLInputElement).value;
+      opts().color = c;
+      if (this.tool === "highlight") opts().highlightColor = c;
+      for (const p of this.panes) p.overlay.styleSelected({ color: c });
+    });
+    $<HTMLSelectElement>("#opt-width").addEventListener("change", (e) => {
+      const w = parseFloat((e.target as HTMLSelectElement).value);
+      opts().strokeWidth = w;
+      for (const p of this.panes) p.overlay.styleSelected({ strokeWidth: w });
+    });
+    $<HTMLSelectElement>("#opt-font").addEventListener("change", (e) => {
+      const f = parseFloat((e.target as HTMLSelectElement).value);
+      opts().fontSize = f;
+      for (const p of this.panes) p.overlay.styleSelected({ fontSize: f });
+    });
+    const si = $<HTMLInputElement>("#search-input");
+    si.addEventListener("input", () => this.runSearch());
+    si.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") this.stepSearch(e.shiftKey ? -1 : 1);
+      if (e.key === "Escape") this.closeSearch();
+    });
+    $<HTMLInputElement>("#search-case").addEventListener("change", () => this.runSearch());
+  }
+
+  private action(a: string): void {
+    const v = this.activeViewer;
+    switch (a) {
+      case "open":
+        return void this.open();
+      case "save":
+        return void this.save(false);
+      case "saveAs":
+        return void this.save(true);
+      case "print":
+        return void this.print();
+      case "undo":
+        return this.history.undo();
+      case "redo":
+        return this.history.redo();
+      case "sidebar":
+        document.body.classList.toggle("sidebar-hidden");
+        localStorage.setItem("pdfstudio:sidebar", document.body.classList.contains("sidebar-hidden") ? "0" : "1");
+        return;
+      case "prev":
+        return v.prev();
+      case "next":
+        return v.next();
+      case "zoomIn":
+        return v.setZoom(nextZoom(v.zoom, 1));
+      case "zoomOut":
+        return v.setZoom(nextZoom(v.zoom, -1));
+      case "fitWidth":
+        return v.setFit("width");
+      case "fitPage":
+        return v.setFit("page");
+      case "split":
+        return this.toggleSplit();
+      case "search":
+        return $("#searchbar").hidden ? this.openSearch() : this.closeSearch();
+      case "searchNext":
+        return this.stepSearch(1);
+      case "searchPrev":
+        return this.stepSearch(-1);
+      case "searchClose":
+        return this.closeSearch();
+      case "mark":
+        return void this.addMark();
+      case "image":
+        return void this.addImage();
+      case "signature":
+        return void this.addSignature();
+      case "deleteSel":
+        for (const p of this.panes) p.overlay.deleteSelected();
+        return;
+      case "theme": {
+        const cur = document.documentElement.dataset.theme;
+        const dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+        return this.applyTheme(dark ? "light" : "dark");
+      }
+      case "tools":
+        document.body.classList.toggle("tools-open");
+        return;
+    }
+  }
+
+  private applyTheme(t: string | null): void {
+    if (t === "light" || t === "dark") {
+      document.documentElement.dataset.theme = t;
+      localStorage.setItem("pdfstudio:theme", t);
+    }
+  }
+
+  private bindSidebarTabs(): void {
+    if (localStorage.getItem("pdfstudio:sidebar") === "0" || window.innerWidth < 760) {
+      document.body.classList.add("sidebar-hidden");
+    }
+    document.querySelectorAll<HTMLElement>("[data-tab]").forEach((b) =>
+      b.addEventListener("click", () => this.showSidebarTab(b.dataset.tab!)),
+    );
+  }
+
+  private showSidebarTab(tab: string): void {
+    document.body.classList.remove("sidebar-hidden");
+    document.querySelectorAll<HTMLElement>("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+    document.querySelectorAll<HTMLElement>("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== tab));
+  }
+
+  private bindKeyboard(): void {
+    window.addEventListener("keydown", (e) => {
+      const t = e.target as HTMLElement;
+      if (t.closest("input, textarea, select, [contenteditable=true], .modal")) return;
+      const mod = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+      const v = this.activeViewer;
+      if (mod) {
+        const map: Record<string, () => void> = {
+          o: () => void this.open(),
+          p: () => void this.print(),
+          s: () => void this.save(e.shiftKey),
+          z: () => (e.shiftKey ? this.history.redo() : this.history.undo()),
+          y: () => this.history.redo(),
+          f: () => this.openSearch(),
+          d: () => void this.addMark(),
+          "\\": () => this.toggleSplit(),
+          "=": () => v.setZoom(nextZoom(v.zoom, 1)),
+          "+": () => v.setZoom(nextZoom(v.zoom, 1)),
+          "-": () => v.setZoom(nextZoom(v.zoom, -1)),
+          "0": () => v.setFit("width"),
+        };
+        if (map[k]) {
+          e.preventDefault();
+          map[k]();
+        }
+        return;
+      }
+      if (e.altKey) return;
+      if (k === "delete" || k === "backspace") {
+        if (this.panes.some((p) => p.overlay.selectedId)) {
+          e.preventDefault();
+          for (const p of this.panes) p.overlay.deleteSelected();
+        }
+        return;
+      }
+      if (k === "escape") {
+        if (!$("#searchbar").hidden) return this.closeSearch();
+        for (const p of this.panes) p.overlay.select(null);
+        return this.setTool("select");
+      }
+      if (k === "f3") {
+        e.preventDefault();
+        return this.stepSearch(e.shiftKey ? -1 : 1);
+      }
+      if (k === "home" && !e.shiftKey) return (e.preventDefault(), v.scrollToPage(0));
+      if (k === "end" && !e.shiftKey) return (e.preventDefault(), v.scrollToPage(v.pageList.length - 1));
+      if (k === "arrowright" && v.scroller.scrollWidth <= v.scroller.clientWidth) return v.next();
+      if (k === "arrowleft" && v.scroller.scrollWidth <= v.scroller.clientWidth) return v.prev();
+      const tools: Record<string, Tool> = {
+        v: "select",
+        h: "hand",
+        t: "text",
+        p: "ink",
+        r: "rect",
+        o: "ellipse",
+        l: "line",
+        a: "arrow",
+        n: "note",
+        u: "highlight",
+      };
+      if (tools[k] && this.mainDoc) this.setTool(tools[k]);
+      if (k === "m" && this.mainDoc) void this.addMark();
+    });
+  }
+
+  private bindDragDrop(): void {
+    const dz = $("#dropzone");
+    let depth = 0;
+    window.addEventListener("dragenter", (e) => {
+      if (!e.dataTransfer?.types.includes("Files")) return;
+      depth++;
+      dz.classList.add("show");
+    });
+    window.addEventListener("dragleave", () => {
+      depth = Math.max(0, depth - 1);
+      if (!depth) dz.classList.remove("show");
+    });
+    window.addEventListener("dragover", (e) => {
+      if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+    });
+    window.addEventListener("drop", async (e) => {
+      depth = 0;
+      dz.classList.remove("show");
+      const files = [...(e.dataTransfer?.files ?? [])].filter((f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf");
+      if (!files.length) return;
+      e.preventDefault();
+      const sources = files.map((f) => new FileSource(f));
+      const merge = !!this.mainDoc && (e.shiftKey || (await choiceDialog("Open PDF", "Open as a new document or add its pages to this one?", ["Open", "Add pages"])) === 1);
+      await this.openSources(sources, merge ? "merge" : "replace");
+    });
+  }
+
+  private gotoPageInput(input: HTMLInputElement, v: Viewer): void {
+    const n = parseInt(input.value, 10);
+    if (Number.isFinite(n)) v.scrollToPage(Math.min(v.pageList.length, Math.max(1, n)) - 1);
+    v.scroller.focus();
+  }
+
+  private updatePageIndicators(): void {
+    const n = this.history.state.pages.length;
+    const v = this.activeViewer;
+    const input = $<HTMLInputElement>("#page-input");
+    if (document.activeElement !== input) input.value = n ? String(v.currentIndex + 1) : "";
+    $("#page-total").textContent = `/ ${n}`;
+    const zs = $<HTMLSelectElement>("#zoom-select");
+    const custom = zs.querySelector<HTMLOptionElement>("option[data-custom]")!;
+    const pct = `${Math.round(v.zoom * 100)}%`;
+    custom.textContent = pct;
+    custom.value = String(v.zoom);
+    zs.value = String(v.zoom);
+    $("#status-page").textContent = n ? `Page ${v.currentIndex + 1} of ${n}` : "";
+    $("#status-zoom").textContent = n ? pct : "";
+    this.thumbs.setCurrent(v.currentIndex);
+    this.panes.forEach((p, i) => {
+      const pi = $<HTMLInputElement>(".page-input", p.head);
+      if (document.activeElement !== pi) pi.value = n ? String(p.viewer.currentIndex + 1) : "";
+      $(".page-total", p.head).textContent = `/ ${n}`;
+      $(".pane-zoom", p.head).textContent = `${Math.round(p.viewer.zoom * 100)}%`;
+      $(".pane-title", p.head).textContent = this.panes.length > 1 ? (i === 0 ? "A" : "B") : "";
+    });
+  }
+
+  private updatePageOpsState(): void {
+    const n = this.thumbs.selected.size;
+    $("#pageops-hint").textContent = n ? `${n} selected` : "Current page";
+  }
+
+  private updateChrome(): void {
+    const has = !!this.mainDoc;
+    document.body.classList.toggle("has-doc", has);
+    $<HTMLButtonElement>('[data-action="undo"]').disabled = !this.history.canUndo;
+    $<HTMLButtonElement>('[data-action="redo"]').disabled = !this.history.canRedo;
+    document.querySelectorAll<HTMLButtonElement>("[data-needs-doc]").forEach((b) => (b.disabled = !has));
+    $('[data-action="split"]').classList.toggle("on", this.panes.length > 1);
+    const name = this.mainDoc?.source.name ?? "";
+    $("#status-file").textContent = name ? `${this.history.dirty ? "● " : ""}${name}` : "";
+    this.updatePageIndicators();
+    this.updatePageOpsState();
+    this.renderMarks();
+  }
+
+  private updateMemoryStatus(): void {
+    const px = this.panes.reduce((n, p) => n + p.viewer.canvasPixels, 0);
+    const mb = (px * 4) / 1048576;
+    const el = $("#status-mem");
+    el.textContent = this.mainDoc ? `Render memory ${mb.toFixed(0)} MB` : "";
+    el.title = `Budget ${(this.profile.canvasBudgetPixels * 4 / 1048576).toFixed(0)} MB · device ~${this.profile.memoryGB} GB`;
+  }
+
+  private scheduleViewSave(): void {
+    clearTimeout(this.viewSaveTimer);
+    this.viewSaveTimer = window.setTimeout(() => {
+      if (!this.mainDoc) return;
+      const pos = this.activeViewer.position();
+      const ref = this.history.state.pages[pos.index];
+      if (!ref || ref.docId !== this.mainDoc.id) return;
+      try {
+        localStorage.setItem(
+          `pdfstudio:view:${this.fileKey}`,
+          JSON.stringify({ srcIndex: ref.srcIndex, fy: pos.fy, zoom: this.activeViewer.zoom, fit: this.activeViewer.fitMode }),
+        );
+      } catch {
+        /* ignore */
+      }
+    }, 800);
+  }
+
+  private restoreView(): void {
+    const v = this.activeViewer;
+    try {
+      const raw = localStorage.getItem(`pdfstudio:view:${this.fileKey}`);
+      if (!raw) return v.setFit("width");
+      const s = JSON.parse(raw);
+      if (s.fit && s.fit !== "none") v.setFit(s.fit);
+      else v.setZoom(s.zoom);
+      const i = this.history.state.pages.findIndex((p) => p.docId === this.mainDoc?.id && p.srcIndex === s.srcIndex);
+      if (i > 0 || s.fy > 0) v.scrollToPosition(Math.max(0, i), s.fy);
+    } catch {
+      v.setFit("width");
+    }
+  }
+}

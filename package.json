@@ -1,0 +1,47 @@
+{
+  "name": "pdf-studio",
+  "version": "0.1.0",
+  "description": "Fast, crash-resistant PDF viewer and editor for Windows and iOS (Tauri 2 + PDF.js + pdf-lib)",
+  "scripts": {
+    "assets": "node scripts/copy-pdfjs-assets.mjs",
+    "predev": "npm run assets",
+    "dev": "vite",
+    "prebuild": "npm run assets",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "fixtures": "node scripts/make-fixtures.mjs",
+    "e2e": "npm run fixtures && npm run build && playwright test",
+    "tauri": "tauri",
+    "app:dev": "tauri dev",
+    "app:build": "tauri build",
+    "ios:init": "tauri ios init",
+    "ios:dev": "tauri ios dev",
+    "ios:build": "tauri ios build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tul018/PDF-viewer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tul018/PDF-viewer/issues"
+  },
+  "homepage": "https://github.com/tul018/PDF-viewer#readme",
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.3",
+    "@tauri-apps/plugin-dialog": "^2.8.2",
+    "@tauri-apps/plugin-opener": "^2.7.1",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.4.299"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.0",
+    "@tauri-apps/cli": "^2.12.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
+  },
+  "private": true,
+  "type": "module"
+}

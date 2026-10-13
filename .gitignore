@@ -1,0 +1,9 @@
+node_modules/
+dist/
+public/pdfjs/
+test-results/
+playwright-report/
+tests/fixtures/*.pdf
+src-tauri/target/
+src-tauri/gen/
+*.log

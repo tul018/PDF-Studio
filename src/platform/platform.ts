@@ -1,0 +1,177 @@
+import { FileSource, type PdfSource } from "../core/source";
+
+/**
+ * Platform bridge. The same web UI runs:
+ *   - in Tauri on Windows (WebView2): native open/save dialogs, files read by
+ *     byte range through Rust (no size limit), atomic in-place saves;
+ *   - in Tauri on iOS/iPadOS (WKWebView): system document picker, saves into
+ *     the app's Documents folder (visible in the Files app);
+ *   - in any modern browser (development, PWA fallback).
+ */
+export type PlatformKind = "web" | "desktop" | "ios";
+
+type Invoke = <T>(cmd: string, args?: unknown, opts?: { headers?: Record<string, string> }) => Promise<T>;
+
+export interface SaveResult {
+  name: string;
+  path?: string;
+  /** The currently open source file was overwritten. */
+  inPlace: boolean;
+}
+
+export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+let invokeFn: Invoke | null = null;
+async function invoke<T>(cmd: string, args?: unknown, opts?: { headers?: Record<string, string> }): Promise<T> {
+  if (!invokeFn) invokeFn = (await import("@tauri-apps/api/core")).invoke as Invoke;
+  return invokeFn<T>(cmd, args, opts);
+}
+
+/** File on the native file system, read lazily by byte range via Rust. */
+export class NativeSource implements PdfSource {
+  readonly freshReadAll = true;
+  constructor(
+    readonly path: string,
+    readonly size: number,
+  ) {}
+  get name(): string {
+    return this.path.split(/[\\/]/).pop() || "document.pdf";
+  }
+  static async open(path: string): Promise<NativeSource> {
+    const size = await invoke<number>("file_size", { path });
+    return new NativeSource(path, size);
+  }
+  async readRange(begin: number, end: number): Promise<Uint8Array> {
+    const buf = await invoke<ArrayBuffer>("read_range", { path: this.path, offset: begin, length: end - begin });
+    return new Uint8Array(buf);
+  }
+  async readAll(): Promise<Uint8Array> {
+    return new Uint8Array(await invoke<ArrayBuffer>("read_file", { path: this.path }));
+  }
+}
+
+export class Platform {
+  readonly kind: PlatformKind;
+
+  constructor(isIOS: boolean) {
+    this.kind = !isTauri ? "web" : isIOS ? "ios" : "desktop";
+  }
+
+  /** Files passed on the command line / "Open with" (Windows). */
+  async initialFiles(): Promise<PdfSource[]> {
+    if (this.kind !== "desktop") return [];
+    try {
+      const paths = await invoke<string[]>("initial_files");
+      return Promise.all(paths.map((p) => NativeSource.open(p)));
+    } catch {
+      return [];
+    }
+  }
+
+  async pickFiles(multiple = false): Promise<PdfSource[]> {
+    if (this.kind === "desktop") {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const res = await open({ multiple, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+      if (!res) return [];
+      const paths = Array.isArray(res) ? res : [res];
+      return Promise.all(paths.map((p) => NativeSource.open(String(p))));
+    }
+    // iOS document picker / browser file chooser. Files are read lazily via
+    // File.slice(), so even huge files aren't loaded into memory.
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "application/pdf,.pdf";
+      input.multiple = multiple;
+      input.style.display = "none";
+      input.addEventListener("change", () => {
+        resolve([...(input.files ?? [])].map((f) => new FileSource(f)));
+        input.remove();
+      });
+      input.addEventListener("cancel", () => {
+        resolve([]);
+        input.remove();
+      });
+      document.body.appendChild(input);
+      input.click();
+    });
+  }
+
+  async pickImage(): Promise<File | null> {
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/png,image/jpeg,image/webp,image/heic,image/*";
+      input.style.display = "none";
+      input.addEventListener("change", () => {
+        resolve(input.files?.[0] ?? null);
+        input.remove();
+      });
+      input.addEventListener("cancel", () => {
+        resolve(null);
+        input.remove();
+      });
+      document.body.appendChild(input);
+      input.click();
+    });
+  }
+
+  /** Save; overwrites `current` in place when possible (desktop only). */
+  async save(bytes: Uint8Array, name: string, current?: PdfSource, forceDialog = false): Promise<SaveResult | null> {
+    if (this.kind === "desktop") {
+      let path = !forceDialog ? current?.path : undefined;
+      if (!path) {
+        const { save } = await import("@tauri-apps/plugin-dialog");
+        const chosen = await save({ defaultPath: name, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+        if (!chosen) return null;
+        path = chosen.toLowerCase().endsWith(".pdf") ? chosen : chosen + ".pdf";
+      }
+      await invoke("write_file", bytes, { headers: { path: encodeURIComponent(path) } });
+      return { name: path.split(/[\\/]/).pop()!, path, inPlace: path === current?.path };
+    }
+    if (this.kind === "ios") {
+      const path = await invoke<string>("save_to_documents", bytes, { headers: { name: encodeURIComponent(name) } });
+      return { name: path.split("/").pop()!, path, inPlace: false };
+    }
+    return this.saveInBrowser(bytes, name);
+  }
+
+  private async saveInBrowser(bytes: Uint8Array, name: string): Promise<SaveResult | null> {
+    const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
+    const picker = (window as unknown as { showSaveFilePicker?: (o: object) => Promise<FileSystemFileHandle> })
+      .showSaveFilePicker;
+    if (picker && !navigator.webdriver) {
+      try {
+        const handle = await picker({
+          suggestedName: name,
+          types: [{ description: "PDF", accept: { "application/pdf": [".pdf"] } }],
+        });
+        const w = await handle.createWritable();
+        await w.write(blob);
+        await w.close();
+        return { name: handle.name, inPlace: false };
+      } catch (e) {
+        if ((e as Error).name === "AbortError") return null;
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return { name, inPlace: false };
+  }
+
+  async openExternal(url: string): Promise<void> {
+    if (!/^(https?|mailto):/i.test(url)) return; // never open file:/javascript: from a PDF
+    if (isTauri) {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(url);
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }
+}
