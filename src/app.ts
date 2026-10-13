@@ -384,7 +384,7 @@ export class App {
           this.restoreView();
           void this.offerRecovery();
         });
-        if (main.encrypted) toast("Protected PDF: edits will be saved as an image-based copy.", "info", 5000);
+        if (main.encrypted) toast("Protected PDF: saving edits removes the password (pages saved as images).", "info", 6000);
       } else {
         let s = this.history.state;
         for (const d of loaded) s = insertPages(s, s.pages.length, pagesForDoc(d.id, d.numPages));
@@ -485,7 +485,17 @@ export class App {
   async save(asNew: boolean): Promise<boolean> {
     if (!this.mainDoc) return false;
     for (const p of this.panes) p.overlay.commitTextEdit();
-    const totalBytes = [...new Set(this.history.state.pages.map((p) => p.docId))]
+    const usedDocs = [...new Set(this.history.state.pages.map((p) => p.docId))];
+    if (usedDocs.some((id) => id && this.store.docs.get(id)?.encrypted)) {
+      // pdf-lib can't encrypt (roadmap: password on save): say so plainly before it happens.
+      const ok = await confirmDialog(
+        "Save without the password?",
+        "This PDF is password-protected. PDF Studio can't add passwords yet, so the saved file will open WITHOUT a password, and its pages are saved as images (text can't be selected or searched). The original file is not changed if you save a copy.",
+        "Save without password",
+      );
+      if (!ok) return false;
+    }
+    const totalBytes = usedDocs
       .map((id) => (id ? (this.store.docs.get(id)?.source.size ?? 0) : 0))
       .reduce((a, b) => a + b, 0);
     const limit = (this.profile.isIOS ? 350 : 1500) * 1024 * 1024;

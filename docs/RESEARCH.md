@@ -165,7 +165,7 @@ These are significant features that need more work, or a native SDK, to do prope
 5. **Password protection on save** (requested). Today the app can only *open* protected PDFs. Planned:
    - a "Protect with password" option when saving, with standard AES-256 encryption (opens in Adobe Reader, Edge, phones), probably done on the Rust side so large files stay fast;
    - edited protected PDFs keep their password and stay real, searchable text, instead of becoming an unprotected image-based copy as now (pdf-lib cannot encrypt);
-   - until then at least, a clear warning before any save that removes protection (the current message only says "image-based copy").
+   - ✅ until then, a clear warning before any save that removes protection (done: confirm dialog "Save without the password?").
 6. **Compress / optimize** (requested, for LINE/email size limits), **PDF/A export.**
 7. **Incremental save**, which appends changes instead of rewriting the file. That would make saving very large files much cheaper.
 8. **XFA forms** (a legacy format that PDF.js renders only partially).
