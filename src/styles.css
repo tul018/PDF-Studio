@@ -304,6 +304,14 @@ body.has-doc .empty { display: none; }
 .modal p { margin: 0 0 12px; line-height: 1.45; }
 .modal-input { width: 100%; height: 38px; margin: 6px 0 4px; }
 textarea.modal-input { height: 110px; padding: 8px; resize: vertical; }
+/* Form rows in dialogs (labels, settings). */
+.form-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0; }
+.form-row > span:first-child { color: var(--muted); font-size: 13px; }
+.form-row select { min-width: 0; max-width: 300px; flex: 1; }
+.form-row[hidden], .form-check[hidden] { display: none; }
+.form-check { display: flex; margin: 8px 0; font-size: 13px; }
+.inline-fields { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.num-input { width: 72px; height: 32px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .sig-canvas { display: block; background: #fff; border: 1px solid var(--border); border-radius: 8px; touch-action: none; margin: 8px 0; max-width: 100%; }
 .sig-reuse { display: flex; align-items: center; gap: 10px; width: 100%; margin-bottom: 8px; }

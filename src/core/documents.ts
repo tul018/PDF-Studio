@@ -15,6 +15,20 @@ GlobalWorkerOptions.workerSrc = workerUrl;
 
 const assetBase = new URL("pdfjs/", document.baseURI).href;
 
+/**
+ * Bundled PDF.js data (CMaps for Chinese/Japanese/Korean, standard fonts,
+ * image decoders, colour profiles). Every getDocument() in the app needs
+ * these, or non-embedded CJK fonts, JPEG2000 scans etc. come out wrong.
+ */
+export const pdfjsAssets = {
+  cMapUrl: assetBase + "cmaps/",
+  cMapPacked: true,
+  standardFontDataUrl: assetBase + "standard_fonts/",
+  wasmUrl: assetBase + "wasm/",
+  iccUrl: assetBase + "iccs/",
+  useSystemFonts: true,
+};
+
 export interface PageMeta {
   /** [x0, y0, x1, y1] user-space view box (CropBox). */
   view: number[];

@@ -1,6 +1,6 @@
 /** Small, dependency-free modal dialogs that work with mouse, touch and keyboard. */
 
-function modal(build: (box: HTMLDivElement, close: () => void) => void): () => void {
+export function modal(build: (box: HTMLDivElement, close: () => void) => void): () => void {
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop";
   const box = document.createElement("div");
@@ -14,7 +14,7 @@ function modal(build: (box: HTMLDivElement, close: () => void) => void): () => v
   return close;
 }
 
-function buttons(box: HTMLElement, defs: { label: string; primary?: boolean; onClick: () => void }[]): HTMLButtonElement[] {
+export function buttons(box: HTMLElement, defs: { label: string; primary?: boolean; onClick: () => void }[]): HTMLButtonElement[] {
   const row = document.createElement("div");
   row.className = "modal-actions";
   const out = defs.map((d) => {
@@ -29,7 +29,7 @@ function buttons(box: HTMLElement, defs: { label: string; primary?: boolean; onC
   return out;
 }
 
-function title(box: HTMLElement, text: string, sub?: string): void {
+export function title(box: HTMLElement, text: string, sub?: string): void {
   const h = document.createElement("h2");
   h.textContent = text;
   box.appendChild(h);

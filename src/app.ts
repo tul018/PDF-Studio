@@ -1,4 +1,5 @@
-import { CSS_UNITS, DocumentStore, type LoadedDoc } from "./core/documents";
+import { getDocument, OPS } from "pdfjs-dist";
+import { CSS_UNITS, DocumentStore, pdfjsAssets, type LoadedDoc } from "./core/documents";
 import { getProfile, type DeviceProfile } from "./core/deviceProfile";
 import { nextZoom } from "./core/layout";
 import { FileSource, fileKeyOf, fileVersionOf, type PdfSource } from "./core/source";
@@ -18,6 +19,8 @@ import {
 } from "./edit/model";
 import { AnnotationOverlay, type Tool } from "./edit/overlay";
 import { clearDraft, loadDraft, saveDraft } from "./edit/recovery";
+import { labelDialog } from "./labels/labelDialog";
+import { buildLabelPdf } from "./labels/labels";
 import { NativeSource, Platform } from "./platform/platform";
 import { buildPdf } from "./save/saver";
 import { choiceDialog, confirmDialog, progressOverlay, promptText, signaturePad, toast } from "./ui/dialogs";
@@ -514,6 +517,54 @@ export class App {
     }
   }
 
+  /** Label printing mode: shipping labels cut out onto label-stock pages (see labels/labels.ts). */
+  async printLabels(): Promise<void> {
+    if (!this.mainDoc) return;
+    for (const p of this.panes) p.overlay.commitTextEdit();
+    const choice = await labelDialog();
+    if (!choice) return;
+    const { options } = choice;
+    const busy = progressOverlay("Finding labels…");
+    try {
+      // The edited document, exactly as Save would write it (annotations, stamps, page changes).
+      const bytes = await buildPdf(this.history.state, this.store, this.images, {
+        onProgress: (_l, f) => busy.update("Preparing…", f * 0.2),
+      });
+      // pdf.js may take over the buffer it is given: pass it a copy.
+      const task = getDocument({ data: bytes.slice(), ...pdfjsAssets } as Parameters<typeof getDocument>[0]);
+      let result: { bytes: Uint8Array; count: number };
+      try {
+        result = await buildLabelPdf(bytes, await task.promise, options, OPS, (f) => busy.update("Making labels…", 0.2 + f * 0.4));
+      } finally {
+        await task.destroy();
+      }
+      if (!result.count) {
+        busy.close();
+        toast("No labels found on these pages. Try another layout.", "error", 6000);
+        return;
+      }
+      if (choice.action === "save") {
+        busy.close();
+        const name = `${this.mainDoc.source.name.replace(/\.pdf$/i, "")} (labels).pdf`;
+        const res = await this.platform.save(result.bytes, name, undefined, true);
+        if (res) toast(`Saved ${result.count} label${result.count === 1 ? "" : "s"} to ${res.name}`, "ok", 4500);
+        return;
+      }
+      // Lossless, at the printer's own resolution, on paper the size of the stock.
+      await printPdf(result.bytes, (f) => busy.update("Rendering labels for the printer…", 0.6 + f * 0.4), new AbortController().signal, {
+        dpi: options.printerDpi,
+        format: "png",
+        pageMm: options.stockMm,
+      });
+      toast(`${result.count} label${result.count === 1 ? "" : "s"} sent to the printer. Choose the label printer and its ${options.stockMm.width} × ${options.stockMm.height} mm paper, at 100% scale.`, "ok", 8000);
+    } catch (e) {
+      console.error(e);
+      toast(`Labels failed: ${(e as Error)?.message ?? e}`, "error", 8000);
+    } finally {
+      busy.close();
+    }
+  }
+
   async print(): Promise<void> {
     if (!this.mainDoc) return;
     for (const p of this.panes) p.overlay.commitTextEdit();
@@ -938,6 +989,8 @@ export class App {
         return void this.save(true);
       case "print":
         return void this.print();
+      case "labels":
+        return void this.printLabels();
       case "undo":
         return this.history.undo();
       case "redo":
@@ -1015,6 +1068,7 @@ export class App {
         const map: Record<string, () => void> = {
           o: () => void this.open(),
           p: () => void this.print(),
+          l: () => void this.printLabels(),
           s: () => void this.save(e.shiftKey),
           z: () => (e.shiftKey ? this.history.redo() : this.history.undo()),
           y: () => this.history.redo(),

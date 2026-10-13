@@ -42,6 +42,7 @@ const P: Record<string, string> = {
   outline: "M4 6h2 M9 6h11 M4 12h2 M9 12h11 M4 18h2 M9 18h11",
   more: "M5 12h.01 M12 12h.01 M19 12h.01",
   print: "M7 9V3h10v6 M7 17H4v-7h16v7h-3 M7 14h10v7H7z",
+  label: "M4 5v14 M7 5v14 M10 5v10 M13 5v14 M17 5v10 M20 5v14 M10 18h1 M17 18h1",
 };
 
 export function icon(name: string): string {

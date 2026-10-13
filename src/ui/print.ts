@@ -1,27 +1,52 @@
 import { getDocument } from "pdfjs-dist";
-import { CSS_UNITS } from "../core/documents";
+import { CSS_UNITS, pdfjsAssets } from "../core/documents";
+
+export interface PrintOptions {
+  /** Render resolution. Labels: the printer's own (e.g. 203 for a TSC), so dots map 1:1. */
+  dpi?: number;
+  /** PNG keeps barcodes lossless; JPEG keeps big jobs small. */
+  format?: "jpeg" | "png";
+  /** Paper size to request (labels: the stock size). Default: the pages' own size. */
+  pageMm?: { width: number; height: number };
+}
 
 /**
  * Print the *edited* document: the same bytes that Save would write are
  * rendered one page at a time into compressed JPEGs (150 dpi), so even a
  * 500-page job never holds more than one full-size bitmap in memory.
  */
-export async function printPdf(bytes: Uint8Array, onProgress: (f: number) => void, signal: AbortSignal): Promise<void> {
-  const task = getDocument({ data: bytes });
+export async function printPdf(
+  bytes: Uint8Array,
+  onProgress: (f: number) => void,
+  signal: AbortSignal,
+  opts: PrintOptions = {},
+): Promise<void> {
+  const dpi = opts.dpi ?? 150;
+  const format = opts.format ?? "jpeg";
+  const task = getDocument({ data: bytes, ...pdfjsAssets } as Parameters<typeof getDocument>[0]);
   const doc = await task.promise;
   const root = document.createElement("div");
   root.id = "print-root";
+  let pageStyle: HTMLStyleElement | null = null;
+  if (opts.pageMm) {
+    const { width, height } = opts.pageMm;
+    pageStyle = document.createElement("style");
+    pageStyle.textContent = `@media print { @page { size: ${width}mm ${height}mm; margin: 0; } #print-root img { width: ${width}mm !important; height: ${height}mm !important; } }`;
+    document.head.appendChild(pageStyle);
+  }
   const urls: string[] = [];
   try {
     for (let i = 1; i <= doc.numPages; i++) {
       if (signal.aborted) return;
       const page = await doc.getPage(i);
-      const vp = page.getViewport({ scale: 150 / 72 });
+      const vp = page.getViewport({ scale: dpi / 72 });
       const canvas = document.createElement("canvas");
       canvas.width = Math.ceil(vp.width);
       canvas.height = Math.ceil(vp.height);
       await page.render({ canvas, viewport: vp, background: "white" } as Parameters<typeof page.render>[0]).promise;
-      const blob = await new Promise<Blob>((r) => canvas.toBlob((b) => r(b!), "image/jpeg", 0.92));
+      const blob = await new Promise<Blob>((r) =>
+        canvas.toBlob((b) => r(b!), format === "png" ? "image/png" : "image/jpeg", 0.92),
+      );
       canvas.width = canvas.height = 0;
       page.cleanup();
       const url = URL.createObjectURL(blob);
@@ -41,6 +66,7 @@ export async function printPdf(bytes: Uint8Array, onProgress: (f: number) => voi
   } finally {
     setTimeout(() => {
       root.remove();
+      pageStyle?.remove();
       urls.forEach((u) => URL.revokeObjectURL(u));
     }, 1000);
     await task.destroy();

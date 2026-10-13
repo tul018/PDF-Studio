@@ -165,7 +165,34 @@ async function languages() {
   writeFileSync(join(out, "languages.json"), JSON.stringify({ thai: !!thaiPath }));
 }
 
-for (const [name, fn] of [["basic.pdf", basic], ["form.pdf", form], ["heavy-images.pdf", heavy], ["long-text.pdf", longText], ["languages.pdf", languages]]) {
+// Shopee-style shipping labels: A4 pages with one label per half page (3 pages,
+// 5 labels: the last page's bottom half is empty), each with a tracking line,
+// an order number and a 1-px-high barcode image, plus the dashed cut line.
+async function shopeeLabels() {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bars = new Uint8Array(96).map((_, i) => ((i * 7) % 5 < 2 ? 0 : 255));
+  const img = doc.context.register(
+    doc.context.flateStream(bars, { Type: "XObject", Subtype: "Image", Width: 96, Height: 1, ColorSpace: "DeviceGray", BitsPerComponent: 8 }),
+  );
+  let n = 0;
+  for (const halves of [["top", "bottom"], ["top", "bottom"], ["top"]]) {
+    const page = doc.addPage([595, 842]);
+    page.node.setXObject(PDFName.of("Bc"), img);
+    page.drawText("- - - - - - - - - - - - - - - - - - - - - - - - - - - -", { x: 30, y: 421, size: 10, font });
+    for (const half of halves) {
+      const y = half === "top" ? 470 : 50;
+      n++;
+      page.drawText(`SPX Express   TH24100000${n}`, { x: 40, y: y + 320, size: 18, font });
+      page.drawText(`Buyer ${n}, 99 Sukhumvit Rd, Bangkok 10110`, { x: 40, y: y + 280, size: 12, font });
+      page.pushOperators(pushGraphicsState(), concatTransformationMatrix(400, 0, 0, 60, 40, y + 160), drawObject("Bc"), popGraphicsState());
+      page.drawText(`Shopee Order No. 241014ABC00${n}`, { x: 40, y: y + 120, size: 12, font });
+    }
+  }
+  writeFileSync(join(out, "shopee-labels.pdf"), await doc.save());
+}
+
+for (const [name, fn] of [["basic.pdf", basic], ["form.pdf", form], ["heavy-images.pdf", heavy], ["long-text.pdf", longText], ["languages.pdf", languages], ["shopee-labels.pdf", shopeeLabels]]) {
   if (!force && existsSync(join(out, name))) continue;
   const t = Date.now();
   await fn();
