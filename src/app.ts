@@ -32,10 +32,10 @@ import { renderWatermark } from "./edit/stamps";
 import type { Protection } from "./save/encrypt";
 import { imagesToPdf } from "./save/fromImages";
 import { BytesSource } from "./core/source";
-import { cutDialog, protectDialog, photosDialog, exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
+import { cutDialog, protectDialog, photosDialog, shrinkDialog, exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
 import { cutPages } from "./edit/cut";
 import { forgetRecent, mapDocIds, newTab, recentFiles, rememberRecent, TabBar, type Tab, type TabSnapshot } from "./tabs";
-import { pagesToImages, splitInWorker } from "./save/pages";
+import { pagesToImages, shrinkInWorker, splitInWorker } from "./save/pages";
 import { splitParts } from "./save/split";
 import { clearDraft, loadDraft, saveDraft } from "./edit/recovery";
 import { labelDialog } from "./labels/labelDialog";
@@ -752,6 +752,31 @@ export class App {
     }
   }
 
+  /** Save a smaller copy (pictures re-compressed in a worker). */
+  async shrink(): Promise<void> {
+    if (!this.mainDoc) return;
+    const before = this.mainDoc.source.size;
+    const level = await shrinkDialog(before / 1048576);
+    if (!level) return;
+    const busy = progressOverlay("Preparing…");
+    try {
+      const bytes = await buildPdf(this.history.state, this.store, this.images, { onProgress: (_l, f) => busy.update("Preparing…", f * 0.3) });
+      const r = await shrinkInWorker(bytes, level, (f) => busy.update("Compressing pictures…", 0.3 + f * 0.7));
+      busy.close();
+      const mb = (n: number) => `${(n / 1048576).toFixed(1)} MB`;
+      if (r.bytes.length >= before * 0.95) {
+        return toast(`This PDF can't get much smaller (${r.images ? "its pictures are already compact" : "it has no pictures"}).`, "info", 6000);
+      }
+      const res = await this.platform.save(r.bytes, `${this.outputBase().base} (small).pdf`, undefined, true);
+      if (res) toast(`Saved ${res.name}: ${mb(before)} → ${mb(r.bytes.length)} (${Math.round((1 - r.bytes.length / before) * 100)}% smaller).`, "ok", 7000);
+    } catch (e) {
+      console.error(e);
+      toast(`Shrink failed: ${(e as Error)?.message ?? e}`, "error", 8000);
+    } finally {
+      busy.close();
+    }
+  }
+
   /** Pick photos/scans and make a new PDF of them (opens in a tab, unsaved). */
   async pdfFromPhotos(): Promise<void> {
     const files = await this.platform.pickImages();
@@ -1387,6 +1412,8 @@ export class App {
         return void this.print();
       case "labels":
         return void this.printLabels();
+      case "shrink":
+        return void this.shrink();
       case "fromPhotos":
         return void this.pdfFromPhotos();
       case "protect":

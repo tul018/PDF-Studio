@@ -585,3 +585,33 @@ export function photosDialog(count: number): Promise<{ trim: boolean; scanLook: 
     });
   });
 }
+
+// ------------------------------------------------------------------ shrink
+
+export function shrinkDialog(sizeMb: number): Promise<"small" | "balanced" | "high" | null> {
+  const o = remember("pdfstudio:shrink", { level: "balanced" });
+  return new Promise((resolve) => {
+    modal((box, close) => {
+      title(box, "Shrink PDF size", `This file is ${sizeMb.toFixed(1)} MB. Pictures are re-compressed; text stays sharp. A smaller copy is saved; the original is kept.`);
+      const level = select(
+        [
+          ["small", "Smallest (for LINE / email)"],
+          ["balanced", "Balanced"],
+          ["high", "High quality (for printing)"],
+        ],
+        o.level,
+      );
+      row(box, "Size", level);
+      const done = (v: "small" | "balanced" | "high" | null) => {
+        if (v) store("pdfstudio:shrink", { level: v });
+        close();
+        resolve(v);
+      };
+      escClose(box, () => done(null));
+      buttons(box, [
+        { label: "Cancel", onClick: () => done(null) },
+        { label: "Shrink", primary: true, onClick: () => done(level.value as "small" | "balanced" | "high") },
+      ]);
+    });
+  });
+}

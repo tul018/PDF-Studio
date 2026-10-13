@@ -1,5 +1,6 @@
 import { getDocument } from "pdfjs-dist";
 import { pdfjsAssets } from "../core/documents";
+import ShrinkWorker from "./shrink.worker?worker";
 import SplitWorker from "./split.worker?worker";
 
 /** Split the (edited) document into parts, in a worker. */
@@ -64,4 +65,31 @@ export async function* pagesToImages(
   } finally {
     await task.destroy();
   }
+}
+
+/** Shrink (re-compress pictures) in a worker. */
+export function shrinkInWorker(
+  bytes: Uint8Array,
+  level: import("./shrink").ShrinkLevel,
+  onProgress: (f: number) => void,
+): Promise<{ bytes: Uint8Array; images: number; redone: number }> {
+  return new Promise((resolve, reject) => {
+    const w = new ShrinkWorker();
+    w.onmessage = (e: MessageEvent) => {
+      const m = e.data;
+      if (m.type === "progress") onProgress(m.f);
+      else if (m.type === "done") {
+        w.terminate();
+        resolve({ bytes: m.bytes, images: m.images, redone: m.redone });
+      } else if (m.type === "error") {
+        w.terminate();
+        reject(new Error(m.message));
+      }
+    };
+    w.onerror = (e) => {
+      w.terminate();
+      reject(new Error(e.message || "Shrink failed"));
+    };
+    w.postMessage({ bytes, level }, [bytes.buffer as ArrayBuffer]);
+  });
 }
