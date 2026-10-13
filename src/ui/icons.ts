@@ -52,6 +52,7 @@ const P: Record<string, string> = {
   photos: "M3 7h4l2-3h6l2 3h4v13H3z M12 10a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z",
   shrink: "M4 14h6v6 M20 10h-6V4 M14 10l7-7 M3 21l7-7",
   nightPage: "M6 3h9l4 4v14H6z M14 10a3 3 0 1 0 0 6 3.6 3.6 0 0 1 0-6z",
+  speaker: "M4 9h4l5-4v14l-5-4H4z M16 9a4 4 0 0 1 0 6 M18.5 6.5a8 8 0 0 1 0 11",
   label: "M4 5v14 M7 5v14 M10 5v10 M13 5v14 M17 5v10 M20 5v14 M10 18h1 M17 18h1",
 };
 

@@ -48,6 +48,8 @@ import { printPdf } from "./ui/print";
 import { FormLinkLayer } from "./viewer/formLayer";
 import { attachGestures } from "./viewer/gestures";
 import { FolderPanel } from "./viewer/folderPanel";
+import { ReadAloud } from "./viewer/readAloud";
+import { extractPageText } from "./viewer/search";
 import { newTextCache, Search } from "./viewer/search";
 import { Thumbnails } from "./viewer/thumbnails";
 import { Viewer, type Decorator, type Slot, type ViewMode } from "./viewer/viewer";
@@ -106,6 +108,14 @@ export class App {
   private folderPanel!: FolderPanel;
   /** Next open goes to a given place (folder search result): skip restoring the last position. */
   private skipRestoreView = false;
+  private reader = new ReadAloud(
+    async (i) => {
+      const ref = this.history.state.pages[i];
+      const page = ref && (await this.store.getPage(ref));
+      return page ? (await extractPageText(page)).text : "";
+    },
+    () => this.history.state.pages.length,
+  );
   private tabs: Tab[] = [];
   private activeTab = -1;
   private tabBar!: TabBar;
@@ -173,6 +183,14 @@ export class App {
       document.body.classList.add("night-pages");
       $('[data-action="nightPages"]').classList.add("on");
     }
+    this.reader.onPage = (i) => this.activeViewer.scrollToPage(i);
+    this.reader.onStop = () => $('[data-action="readAloud"]').classList.remove("on");
+    this.reader.onMissingVoice = (lang) =>
+      toast(
+        `No ${lang === "th" ? "Thai" : "Chinese"} voice is installed. Windows: Settings › Time & language › Speech › Add voices, then try again.`,
+        "info",
+        9000,
+      );
     this.tabBar = new TabBar($("#tabbar"));
     this.tabBar.onSelect = (i) => void this.switchTab(i);
     this.tabBar.onClose = (i) => void this.closeTab(i);
@@ -576,6 +594,7 @@ export class App {
   }
 
   private async closeDocument(): Promise<void> {
+    this.reader.stop();
     for (const p of this.panes) {
       p.search.clear();
       $(".search-count", p.bar).textContent = "";
@@ -1432,6 +1451,13 @@ export class App {
         return void this.printLabels();
       case "shrink":
         return void this.shrink();
+      case "readAloud": {
+        if (this.reader.playing) return this.reader.stop();
+        if (!this.reader.supported) return toast("Read aloud isn't available here.", "error");
+        $('[data-action="readAloud"]').classList.add("on");
+        toast("Reading aloud… click the speaker again to stop.", "info", 3500);
+        return void this.reader.start(this.activeViewer.currentIndex);
+      }
       case "nightPages": {
         const on = document.body.classList.toggle("night-pages");
         $('[data-action="nightPages"]').classList.toggle("on", on);
