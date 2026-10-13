@@ -1,5 +1,5 @@
 import { AnnotationMode, type PDFPageProxy } from "pdfjs-dist";
-import type { DocumentStore } from "../core/documents";
+import { cropViewport, type DocumentStore } from "../core/documents";
 import { PageLayout } from "../core/layout";
 import { WeightedLRU } from "../core/lru";
 import { isAbort, type RenderQueue } from "../core/renderQueue";
@@ -282,11 +282,13 @@ export class Thumbnails {
     const page: PDFPageProxy = await pageP;
     if (signal.aborted) return;
     const rotation = this.store.rotation(it.ref);
-    const base = page.getViewport({ scale: 1, rotation });
-    const vp = page.getViewport({ scale: (THUMB_W * this.dpr) / base.width, rotation });
+    const box = this.store.viewBox(it.ref);
+    const base = cropViewport(page, box, 1, rotation);
+    const crop = cropViewport(page, box, (THUMB_W * this.dpr) / base.width, rotation);
+    const vp = crop.viewport;
     const canvas = document.createElement("canvas");
-    canvas.width = Math.ceil(vp.width);
-    canvas.height = Math.ceil(vp.height);
+    canvas.width = Math.max(1, Math.round(crop.width));
+    canvas.height = Math.max(1, Math.round(crop.height));
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) return;
     const task = page.render({

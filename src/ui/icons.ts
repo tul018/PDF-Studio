@@ -47,6 +47,7 @@ const P: Record<string, string> = {
   hash: "M5 9h14 M5 15h14 M10 4 8 20 M16 4l-2 16",
   watermark: "M12 3c4 5 6 8 6 11a6 6 0 0 1-12 0c0-3 2-6 6-11z",
   scissors: "M6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M8.1 7.6 20 18 M8.1 16.4 20 6",
+  cutPage: "M4 3h16v18H4z M12 3v18 M4 12h16",
   label: "M4 5v14 M7 5v14 M10 5v10 M13 5v14 M17 5v10 M20 5v14 M10 18h1 M17 18h1",
 };
 

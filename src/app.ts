@@ -1,5 +1,5 @@
 import { getDocument, OPS } from "pdfjs-dist";
-import { CSS_UNITS, DocumentStore, pdfjsAssets, type LoadedDoc } from "./core/documents";
+import { cropViewport, CSS_UNITS, DocumentStore, pdfjsAssets, type LoadedDoc } from "./core/documents";
 import { getProfile, type DeviceProfile } from "./core/deviceProfile";
 import { nextZoom } from "./core/layout";
 import { FileSource, fileKeyOf, fileVersionOf, type PdfSource } from "./core/source";
@@ -29,7 +29,8 @@ import {
   type PageGeom,
 } from "./edit/pageDecor";
 import { renderWatermark } from "./edit/stamps";
-import { exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
+import { cutDialog, exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
+import { cutPages } from "./edit/cut";
 import { pagesToImages, splitInWorker } from "./save/pages";
 import { splitParts } from "./save/split";
 import { clearDraft, loadDraft, saveDraft } from "./edit/recovery";
@@ -642,6 +643,41 @@ export class App {
     return { base: src.name.replace(/\.pdf$/i, ""), folder: src.path?.replace(/[\\/][^\\/]*$/, "") };
   }
 
+  /** Cut pages into pieces (vertical and/or horizontal cut by %): each piece becomes a page. */
+  async cutPagesCmd(): Promise<void> {
+    if (!this.mainDoc) return;
+    const sel = this.thumbs.selected;
+    const current = this.history.state.pages[this.activeViewer.currentIndex];
+    const choice = await cutDialog(sel.size, this.history.state.pages.length, (canvas) => this.renderPreview(current, canvas, 300));
+    if (!choice) return;
+    const s = this.history.state;
+    const refs =
+      choice.pages === "all" ? s.pages : choice.pages === "selected" ? s.pages.filter((p) => sel.has(p.id)) : current ? [current] : [];
+    const targets = refs.filter((p) => p.docId);
+    if (!targets.length) return toast("Blank pages can't be cut.", "info");
+    // Real page sizes, not the page-1 estimate used before a page was seen.
+    await Promise.all(targets.filter((p) => !p.crop).map((p) => this.store.loadMeta(p.docId!, p.srcIndex)));
+    const before = this.history.state.pages.length;
+    this.history.push(cutPages(this.history.state, new Set(targets.map((p) => p.id)), { x: choice.x, y: choice.y }, this.geom));
+    this.thumbs.clearSelection();
+    toast(`Cut ${targets.length} page${targets.length === 1 ? "" : "s"}: ${before} → ${this.history.state.pages.length} pages. Undo with Ctrl+Z.`, "ok", 5000);
+  }
+
+  /** A page (as shown: cut, rotated) drawn into `canvas`, `maxW` pixels wide. */
+  private async renderPreview(ref: PageRef | undefined, canvas: HTMLCanvasElement, maxW: number): Promise<void> {
+    if (!ref) return;
+    const page = await this.store.getPage(ref);
+    if (!page) return;
+    const box = this.store.viewBox(ref);
+    const rotation = this.store.rotation(ref);
+    const base = cropViewport(page, box, 1, rotation);
+    const crop = cropViewport(page, box, Math.min(2, maxW / base.width) * Math.min(2, window.devicePixelRatio || 1), rotation);
+    canvas.width = Math.max(1, Math.round(crop.width));
+    canvas.height = Math.max(1, Math.round(crop.height));
+    canvas.style.width = `${Math.round((canvas.width / canvas.height >= 1 ? maxW : (maxW * canvas.width) / canvas.height))}px`;
+    await page.render({ canvas, viewport: crop.viewport, background: "white" } as Parameters<typeof page.render>[0]).promise;
+  }
+
   /** Split into several PDFs (every N pages or by ranges), one file per part. */
   async splitIntoFiles(): Promise<void> {
     if (!this.mainDoc) return;
@@ -762,6 +798,9 @@ export class App {
         break;
       case "splitFiles":
         void this.splitIntoFiles();
+        break;
+      case "cut":
+        void this.cutPagesCmd();
         break;
       case "exportImages":
         void this.exportImages();

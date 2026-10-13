@@ -350,6 +350,15 @@ textarea.modal-input { height: 110px; padding: 8px; resize: vertical; }
 .inline-fields { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 .num-input { width: 72px; height: 32px; }
 .error-text { color: var(--danger); }
+/* Cut pages preview */
+.cut-stage { position: relative; width: fit-content; max-width: 100%; margin: 8px auto; box-shadow: var(--page-shadow); line-height: 0; }
+.cut-stage canvas { display: block; max-width: 100%; height: auto; background: #fff; }
+.cut-line { position: absolute; pointer-events: none; }
+.cut-line[hidden] { display: none; }
+.cut-v { top: 0; bottom: 0; width: 0; border-left: 2px dashed #e11d48; }
+.cut-h { left: 0; right: 0; height: 0; border-top: 2px dashed #e11d48; }
+.cut-row input[type="range"] { flex: 1; min-width: 0; }
+.cut-row .check { min-width: 150px; color: inherit; font-size: 13px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .sig-canvas { display: block; background: #fff; border: 1px solid var(--border); border-radius: 8px; touch-action: none; margin: 8px 0; max-width: 100%; }
 .sig-reuse { display: flex; align-items: center; gap: 10px; width: 100%; margin-bottom: 8px; }

@@ -47,6 +47,7 @@ export async function buildPdf(
       srcIndex: ref.srcIndex,
       rotation: ref.rotation,
       blank: ref.blank,
+      crop: ref.crop,
       annotations,
     };
     if (mustRaster(ref, byPage, store)) {

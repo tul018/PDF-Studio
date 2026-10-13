@@ -213,6 +213,7 @@ export class DocumentStore {
   /** User-space view box (blank pages: 0,0,w,h). */
   viewBox(ref: PageRef): number[] {
     if (!ref.docId) return [0, 0, ref.blank!.width, ref.blank!.height];
+    if (ref.crop) return ref.crop; // a piece made by "Cut pages"
     return this.metaOrEstimate(ref)?.view ?? [0, 0, 612, 792];
   }
 
@@ -292,6 +293,30 @@ export async function openForReading(source: PdfSource): Promise<{ pdf: PDFDocum
     if (locked) throw Object.assign(new Error("password protected"), { name: "PasswordException" });
     throw e;
   }
+}
+
+/**
+ * A viewport that shows only `viewBox` of the page (a cut piece, or the
+ * whole page). PDF.js can't take a custom view box, so the full page
+ * viewport is shifted and the caller sizes the canvas to `width` x `height`.
+ */
+export function cropViewport(
+  page: PDFPageProxy,
+  viewBox: number[],
+  scale: number,
+  rotation: number,
+): { viewport: ReturnType<PDFPageProxy["getViewport"]>; width: number; height: number } {
+  const full = page.getViewport({ scale, rotation });
+  const [ax, ay] = full.convertToViewportPoint(viewBox[0], viewBox[1]) as number[];
+  const [bx, by] = full.convertToViewportPoint(viewBox[2], viewBox[3]) as number[];
+  const minX = Math.min(ax, bx),
+    minY = Math.min(ay, by);
+  const width = Math.abs(bx - ax),
+    height = Math.abs(by - ay);
+  if (Math.abs(minX) < 0.01 && Math.abs(minY) < 0.01 && Math.abs(width - full.width) < 0.01 && Math.abs(height - full.height) < 0.01) {
+    return { viewport: full, width: full.width, height: full.height };
+  }
+  return { viewport: page.getViewport({ scale, rotation, offsetX: -minX, offsetY: -minY }), width, height };
 }
 
 /** PDF points -> CSS px at 100% zoom (matches Acrobat/Chrome "actual size"). */

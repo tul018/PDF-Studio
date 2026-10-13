@@ -101,6 +101,12 @@ export class Search {
           pageHits.push({ pageId: ref.id, pageIndex: i, rects: rectsFor(pt, at, at + q.length) });
           from = at + Math.max(1, q.length);
         }
+        // A cut piece only shows part of the page: drop hits outside it.
+        if (ref.crop) {
+          const [cx0, cy0, cx1, cy1] = ref.crop;
+          const shown = (r: number[]) => r[0] + r[2] > cx0 && r[0] < cx1 && r[1] + r[3] > cy0 && r[1] < cy1;
+          for (let k = pageHits.length - 1; k >= 0; k--) if (!pageHits[k].rects.some(shown)) pageHits.splice(k, 1);
+        }
         if (pageHits.length) {
           // Keep the current hit on the same match while earlier pages' hits
           // are inserted before it (the search wraps around from startIndex).

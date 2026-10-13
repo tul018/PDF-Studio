@@ -24,6 +24,11 @@ export interface PageRef {
   rotation: number;
   /** Size for blank pages (points). */
   blank?: { width: number; height: number };
+  /**
+   * Shows only this part of the page: [x0, y0, x1, y1] in user space (a piece
+   * made by "Cut pages"). Saved as the page's MediaBox/CropBox.
+   */
+  crop?: number[];
 }
 
 /**

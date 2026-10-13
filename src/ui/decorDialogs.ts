@@ -409,3 +409,107 @@ export function splitDialog(total: number, parts: (how: { every: number } | { ra
     });
   });
 }
+
+// ------------------------------------------------------------------ cut pages
+
+const CUT_KEY = "pdfstudio:cut";
+
+export interface CutChoice {
+  pages: PageChoice;
+  /** Fractions 0..1 (x from the left, y from the top), or undefined for no cut. */
+  x?: number;
+  y?: number;
+}
+
+/**
+ * Cut pages into pieces: a vertical and/or a horizontal cut, each at a
+ * percentage, with a live preview on the current page.
+ */
+export function cutDialog(selected: number, total: number, preview: (canvas: HTMLCanvasElement) => Promise<void>): Promise<CutChoice | null> {
+  const o = remember(CUT_KEY, { pages: "current" as PageChoice, vOn: true, v: 50, hOn: false, h: 50 });
+  return new Promise((resolve) => {
+    modal((box, close) => {
+      box.classList.add("cut-dialog");
+      title(box, "Cut pages", "Each page is cut into pieces and every piece becomes its own page, e.g. a 2-up scan or an A3 spread into A4 pages.");
+      const pages = pageChoice(box, selected, total, o.pages);
+
+      const stage = document.createElement("div");
+      stage.className = "cut-stage";
+      const canvas = document.createElement("canvas");
+      const vLine = document.createElement("div");
+      vLine.className = "cut-line cut-v";
+      const hLine = document.createElement("div");
+      hLine.className = "cut-line cut-h";
+      stage.append(canvas, vLine, hLine);
+      box.appendChild(stage);
+      void preview(canvas).catch(() => {});
+
+      const control = (label: string, on: boolean, value: number) => {
+        const r = document.createElement("div");
+        r.className = "form-row cut-row";
+        const c = document.createElement("label");
+        c.className = "check";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = on;
+        c.append(cb, document.createTextNode(" " + label));
+        const range = document.createElement("input");
+        range.type = "range";
+        Object.assign(range, { min: "5", max: "95", step: "0.5", value: String(value) });
+        const n = num(value, 5, 95);
+        n.step = "0.5";
+        const pct = document.createElement("span");
+        pct.textContent = "%";
+        r.append(c, range, n, pct);
+        box.appendChild(r);
+        range.addEventListener("input", () => ((n.value = range.value), sync()));
+        n.addEventListener("input", () => ((range.value = n.value), sync()));
+        cb.addEventListener("change", sync);
+        return { cb, range, n };
+      };
+      const v = control("Vertical cut at", o.vOn, o.v);
+      const h = control("Horizontal cut at", o.hOn, o.h);
+      const info = document.createElement("p");
+      info.className = "muted small";
+      box.appendChild(info);
+      const clamp = (x: string) => Math.min(95, Math.max(5, Number(x) || 50));
+
+      function sync() {
+        const vx = clamp(v.n.value),
+          hy = clamp(h.n.value);
+        vLine.hidden = !v.cb.checked;
+        hLine.hidden = !h.cb.checked;
+        vLine.style.left = `${vx}%`;
+        hLine.style.top = `${hy}%`;
+        const pieces = (v.cb.checked ? 2 : 1) * (h.cb.checked ? 2 : 1);
+        const n = pages.value === "all" ? total : pages.value === "selected" ? selected : 1;
+        info.textContent =
+          pieces < 2 ? "Turn on at least one cut." : `${n} page${n === 1 ? "" : "s"} → ${n * pieces} pages (${pieces} pieces each). Undo (Ctrl+Z) puts them back.`;
+      }
+      pages.addEventListener("change", sync);
+      sync();
+
+      const done = (val: CutChoice | null) => {
+        store(CUT_KEY, { pages: pages.value, vOn: v.cb.checked, v: clamp(v.n.value), hOn: h.cb.checked, h: clamp(h.n.value) });
+        close();
+        resolve(val);
+      };
+      escClose(box, () => done(null));
+      buttons(box, [
+        { label: "Cancel", onClick: () => done(null) },
+        {
+          label: "Cut",
+          primary: true,
+          onClick: () => {
+            if (!v.cb.checked && !h.cb.checked) return;
+            done({
+              pages: pages.value as PageChoice,
+              x: v.cb.checked ? clamp(v.n.value) / 100 : undefined,
+              y: h.cb.checked ? clamp(h.n.value) / 100 : undefined,
+            });
+          },
+        },
+      ]);
+    });
+  });
+}

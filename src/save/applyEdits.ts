@@ -35,6 +35,8 @@ export interface PlanPage {
   /** User-added rotation. */
   rotation: number;
   blank?: { width: number; height: number };
+  /** Show only this part of the page [x0, y0, x1, y1] ("Cut pages"): becomes its MediaBox/CropBox. */
+  crop?: number[];
   /** Rasterized replacement (true redaction / encrypted source). */
   raster?: { bytes: Uint8Array; view: number[]; rotate: number };
   annotations: Annotation[];
@@ -63,7 +65,7 @@ export async function applyEdits(plan: SavePlan, onProgress: Progress = () => {}
   const identity =
     !!only &&
     plan.pages.length === only.getPageCount() &&
-    plan.pages.every((p, i) => p.docId === usedDocIds[0] && p.srcIndex === i && !p.raster && !p.blank);
+    plan.pages.every((p, i) => p.docId === usedDocIds[0] && p.srcIndex === i && !p.raster && !p.blank && !p.crop);
 
   let needAppearanceFallback = false;
   for (const [id, doc] of src) {
@@ -138,6 +140,12 @@ export async function applyEdits(plan: SavePlan, onProgress: Progress = () => {}
   for (let i = 0; i < total; i++) {
     const p = plan.pages[i];
     const page = out.getPage(i);
+    if (p.crop) {
+      const [x0, y0, x1, y1] = p.crop;
+      page.setMediaBox(x0, y0, x1 - x0, y1 - y0);
+      page.setCropBox(x0, y0, x1 - x0, y1 - y0);
+      for (const k of ["TrimBox", "BleedBox", "ArtBox"]) page.node.delete(PDFName.of(k));
+    }
     if (p.rotation) page.setRotation(degrees((page.getRotation().angle + p.rotation) % 360));
     if (p.annotations.length) {
       if (p.docId && !p.raster) isolateExistingContent(out, page);

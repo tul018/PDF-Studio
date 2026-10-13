@@ -90,7 +90,7 @@ Picked for everyday shop work: Shopee/Lazada shipping labels on a TSC label prin
 6. **Several files open at once (tabs) and a recent-files list.** Today opening a file closes the current one. Effort: medium.
 7. **Shrink PDF size** for sending by LINE or email (see "Compress" below). Effort: medium.
 8. ✅ **Split a PDF into several files** (done: every N pages or ranges like 1-3, 4-10, 11-; split in a worker; each part keeps its bookmarks and metadata) by page ranges or every N pages (today: extract selected pages only). Effort: small.
-9. **Cut pages into pieces** (requested): a vertical and a horizontal cut at the same time, each set by percentage, on selected pages or all; each piece becomes its own page (2-up scans, A3 spreads, label sheets). Non-destructive (crop per page), undoable, saved as cropped pages.
+9. ✅ **Cut pages into pieces** (done: Pages panel; vertical + horizontal cut by %, live preview, current/selected/all pages): a vertical and a horizontal cut at the same time, each set by percentage, on selected pages or all; each piece becomes its own page (2-up scans, A3 spreads, label sheets). Non-destructive (crop per page), undoable, saved as cropped pages.
 10. **Translate Chinese supplier documents to Thai or English.** Optional, opt-in only: needs an AI service, so documents would leave the PC (see "AI features" below).
 11. **Password protection on save** (item 5 below).
 

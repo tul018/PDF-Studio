@@ -1,5 +1,5 @@
 import { AnnotationMode, TextLayer, type PDFPageProxy } from "pdfjs-dist";
-import { CSS_UNITS, type DocumentStore } from "../core/documents";
+import { cropViewport, CSS_UNITS, type DocumentStore } from "../core/documents";
 import { degradeProfile, type DeviceProfile } from "../core/deviceProfile";
 import { clampRenderScale, clampZoom, PageLayout } from "../core/layout";
 import { isAbort, RenderQueue } from "../core/renderQueue";
@@ -651,7 +651,7 @@ export class Viewer {
     if (signal.aborted || !this.slots.has(slot.ref.id)) return;
     const zoom = this.zoomValue;
     const rotation = this.store.rotation(slot.ref);
-    const base = page.getViewport({ scale: 1, rotation });
+    const base = cropViewport(page, this.store.viewBox(slot.ref), 1, rotation);
     const desired = zoom * CSS_UNITS * this.dpr;
     let { scale, clamped } = clampRenderScale(base.width, base.height, desired, pixelCap);
     const t0 = performance.now();
@@ -685,11 +685,12 @@ export class Viewer {
     rotation: number,
     signal: AbortSignal,
   ): Promise<"ok" | "oom" | "aborted" | "error"> {
-    const vp = page.getViewport({ scale, rotation });
+    const crop = cropViewport(page, this.store.viewBox(slot.ref), scale, rotation);
+    const vp = crop.viewport;
     const canvas = document.createElement("canvas");
     canvas.className = "page-canvas";
-    canvas.width = Math.max(1, Math.floor(vp.width));
-    canvas.height = Math.max(1, Math.floor(vp.height));
+    canvas.width = Math.max(1, Math.floor(crop.width));
+    canvas.height = Math.max(1, Math.floor(crop.height));
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx || canvas.width === 0) return "oom";
     const task = page.render({
@@ -754,7 +755,7 @@ export class Viewer {
       y1 = Math.min(size.height, vy1 + pad);
     const dpr = this.dpr;
     const rotation = this.store.rotation(slot.ref);
-    const vp = page.getViewport({ scale: zoom * CSS_UNITS * dpr, rotation });
+    const vp = cropViewport(page, this.store.viewBox(slot.ref), zoom * CSS_UNITS * dpr, rotation).viewport;
     const canvas = document.createElement("canvas");
     canvas.className = "page-detail";
     canvas.width = Math.ceil((x1 - x0) * dpr);
@@ -809,7 +810,7 @@ export class Viewer {
     div.style.setProperty("--scale-factor", String(scale));
     div.style.setProperty("--scale-round-x", "1px");
     div.style.setProperty("--scale-round-y", "1px");
-    const viewport = page.getViewport({ scale, rotation: this.store.rotation(slot.ref) });
+    const viewport = cropViewport(page, this.store.viewBox(slot.ref), scale, this.store.rotation(slot.ref)).viewport;
     const tl = new TextLayer({ textContentSource: page.streamTextContent(), container: div, viewport });
     slot.textLayer = tl;
     slot.textDiv = div;
