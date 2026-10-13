@@ -182,6 +182,47 @@ export class Platform {
     return this.saveInBrowser(bytes, name);
   }
 
+  /**
+   * Save several new files (split parts, page images). Desktop: the user
+   * picks a folder once; nothing there is overwritten ("x (1).pdf").
+   * Browser: one download each. Returns how many were saved and where, or
+   * null if cancelled.
+   */
+  async saveMany(
+    files: AsyncIterable<{ name: string; bytes: Uint8Array; mime: string }>,
+    defaultFolder?: string,
+  ): Promise<{ count: number; folder?: string } | null> {
+    if (this.kind === "desktop") {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const dir = await open({ directory: true, defaultPath: defaultFolder, title: "Choose a folder for the files" });
+      if (!dir || Array.isArray(dir)) return null;
+      let count = 0;
+      for await (const f of files) {
+        await invoke("write_new_file", f.bytes, { headers: { dir: encodeURIComponent(String(dir)), name: encodeURIComponent(f.name) } });
+        count++;
+      }
+      return { count, folder: String(dir) };
+    }
+    let count = 0;
+    for await (const f of files) {
+      if (this.kind === "ios") await invoke<string>("save_to_documents", f.bytes, { headers: { name: encodeURIComponent(f.name) } });
+      else {
+        const url = URL.createObjectURL(new Blob([f.bytes as BlobPart], { type: f.mime }));
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = f.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        // Browsers drop downloads started in the same instant.
+        await new Promise((r) => setTimeout(r, 120));
+      }
+      count++;
+    }
+    return { count };
+  }
+
   private async saveInBrowser(bytes: Uint8Array, name: string): Promise<SaveResult | null> {
     const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
     const picker = (window as unknown as { showSaveFilePicker?: (o: object) => Promise<FileSystemFileHandle> })

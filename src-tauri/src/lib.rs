@@ -100,21 +100,48 @@ fn write_file(request: Request<'_>) -> Result<(), String> {
 /// Files app (UIFileSharingEnabled / LSSupportsOpeningDocumentsInPlace).
 #[tauri::command]
 fn save_to_documents(app: tauri::AppHandle, request: Request<'_>) -> Result<String, String> {
-    let name = header(&request, "name")?;
-    let safe: String = name
-        .chars()
-        .map(|c| if matches!(c, '/' | '\\' | ':' | '\0') { '_' } else { c })
-        .collect();
-    let safe = if safe.to_lowercase().ends_with(".pdf") { safe } else { format!("{safe}.pdf") };
     let dir = app.path().document_dir().map_err(err)?;
     fs::create_dir_all(&dir).map_err(err)?;
-    let stem = safe.trim_end_matches(".pdf").trim_end_matches(".PDF").to_string();
-    let mut target = dir.join(&safe);
+    let target = new_file_in(&dir, &header(&request, "name")?);
+    atomic_write(&target, raw_body(&request)?).map_err(err)?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
+/// Kinds of file the app may create: PDFs and exported page images.
+const NEW_FILE_TYPES: [&str; 4] = ["pdf", "png", "jpg", "jpeg"];
+
+/// A new file named `name` in `dir`, never replacing an existing one
+/// ("name (1).pdf", "name (2).pdf"...). Path separators in the name are
+/// neutralized; any other extension gets ".pdf" added.
+fn new_file_in(dir: &Path, name: &str) -> PathBuf {
+    let safe: String = name
+        .chars()
+        .map(|c| if matches!(c, '/' | '\\' | ':' | '\0' | '<' | '>' | '"' | '|' | '?' | '*') { '_' } else { c })
+        .collect();
+    let safe = safe.trim().trim_start_matches('.').to_string();
+    let (stem, ext) = match safe.rsplit_once('.') {
+        Some((s, e)) if NEW_FILE_TYPES.contains(&e.to_lowercase().as_str()) => (s.to_string(), e.to_string()),
+        _ => (safe.clone(), "pdf".to_string()),
+    };
+    let stem = if stem.is_empty() { "document".to_string() } else { stem };
+    let mut target = dir.join(format!("{stem}.{ext}"));
     let mut n = 1;
     while target.exists() {
-        target = dir.join(format!("{stem} ({n}).pdf"));
+        target = dir.join(format!("{stem} ({n}).{ext}"));
         n += 1;
     }
+    target
+}
+
+/// Save one of several files (split parts, page images) into a folder the
+/// user chose, without overwriting anything there. Returns the path used.
+#[tauri::command]
+fn write_new_file(request: Request<'_>) -> Result<String, String> {
+    let dir = PathBuf::from(header(&request, "dir")?);
+    if !dir.is_dir() {
+        return Err(format!("not a folder: {}", dir.display()));
+    }
+    let target = new_file_in(&dir, &header(&request, "name")?);
     atomic_write(&target, raw_body(&request)?).map_err(err)?;
     Ok(target.to_string_lossy().into_owned())
 }
@@ -195,7 +222,8 @@ pub fn run() {
             write_file,
             save_to_documents,
             initial_files,
-            list_pdfs
+            list_pdfs,
+            write_new_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running PDF Studio");
@@ -214,6 +242,21 @@ mod tests {
         atomic_write(&target, b"%PDF-new").unwrap();
         assert_eq!(fs::read(&target).unwrap(), b"%PDF-new");
         assert!(!dir.join(".a.pdf.pdfstudio-tmp").exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn new_files_never_overwrite_and_stay_in_the_folder() {
+        let dir = std::env::temp_dir().join(format!("pdfstudio-new-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let a = new_file_in(&dir, "page 1.png");
+        assert_eq!(a.file_name().unwrap(), "page 1.png");
+        fs::write(&a, b"x").unwrap();
+        assert_eq!(new_file_in(&dir, "page 1.png").file_name().unwrap(), "page 1 (1).png");
+        assert_eq!(new_file_in(&dir, r"..\evil.exe").parent().unwrap(), dir.as_path());
+        assert_eq!(new_file_in(&dir, "../../evil.pdf").parent().unwrap(), dir.as_path());
+        assert!(new_file_in(&dir, "evil.exe").to_string_lossy().ends_with(".pdf"));
+        assert_eq!(new_file_in(&dir, "Part 2.PDF").file_name().unwrap(), "Part 2.PDF");
         fs::remove_dir_all(&dir).unwrap();
     }
 

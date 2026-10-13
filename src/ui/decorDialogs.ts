@@ -293,3 +293,119 @@ export function watermarkDialog(hasWatermark: boolean): Promise<WatermarkOptions
     });
   });
 }
+
+// ------------------------------------------------------------------ export images / split into files
+
+export type PageChoice = "current" | "selected" | "all";
+
+function pageChoice(box: HTMLElement, selected: number, total: number, value: PageChoice): HTMLSelectElement {
+  const opts: [string, string][] = [["current", "Current page"]];
+  if (selected > 1) opts.push(["selected", `Selected pages (${selected})`]);
+  opts.push(["all", `All pages (${total})`]);
+  const s = select(opts, opts.some(([v]) => v === value) ? value : "current");
+  row(box, "Pages", s);
+  return s;
+}
+
+const IMG_KEY = "pdfstudio:export-images";
+
+export function exportImagesDialog(selected: number, total: number): Promise<{ pages: PageChoice; format: "png" | "jpeg"; dpi: number } | null> {
+  const o = remember(IMG_KEY, { pages: "current" as PageChoice, format: "png" as "png" | "jpeg", dpi: 150 });
+  return new Promise((resolve) => {
+    modal((box, close) => {
+      title(box, "Export pages as images", "Each page becomes a picture file, ready for Shopee, Lazada or LINE.");
+      const pages = pageChoice(box, selected, total, o.pages);
+      const format = select(
+        [
+          ["png", "PNG (sharp text, transparent-free)"],
+          ["jpeg", "JPG (smaller files, photos)"],
+        ],
+        o.format,
+      );
+      row(box, "Format", format);
+      const dpi = select(
+        [
+          ["96", "Screen (96 dpi)"],
+          ["150", "Good (150 dpi)"],
+          ["300", "Print (300 dpi)"],
+        ],
+        String(o.dpi),
+      );
+      row(box, "Quality", dpi);
+      const done = (v: { pages: PageChoice; format: "png" | "jpeg"; dpi: number } | null) => {
+        if (v) store(IMG_KEY, v);
+        close();
+        resolve(v);
+      };
+      escClose(box, () => done(null));
+      buttons(box, [
+        { label: "Cancel", onClick: () => done(null) },
+        {
+          label: "Export",
+          primary: true,
+          onClick: () => done({ pages: pages.value as PageChoice, format: format.value as "png" | "jpeg", dpi: Number(dpi.value) }),
+        },
+      ]);
+    });
+  });
+}
+
+const SPLIT_KEY = "pdfstudio:split";
+
+/** How to split the document into files; `parts` validates and returns the page groups. */
+export function splitDialog(total: number, parts: (how: { every: number } | { ranges: string }) => number[][]): Promise<number[][] | null> {
+  const o = remember(SPLIT_KEY, { mode: "every", every: 1, ranges: "" });
+  return new Promise((resolve) => {
+    modal((box, close) => {
+      title(box, "Split into files", `This document has ${total} pages. Each part is saved as its own PDF.`);
+      const mode = select(
+        [
+          ["every", "Every N pages"],
+          ["ranges", "By page ranges"],
+        ],
+        o.mode,
+      );
+      row(box, "Split", mode);
+      const every = num(o.every, 1, Math.max(1, total));
+      const everyRow = row(box, "Pages per file", every);
+      const ranges = document.createElement("input");
+      ranges.className = "modal-input";
+      ranges.placeholder = "e.g. 1-3, 4-10, 11-";
+      ranges.value = o.ranges;
+      const rangesRow = row(box, "Ranges", ranges);
+      const info = document.createElement("p");
+      info.className = "muted small";
+      box.appendChild(info);
+      let result: number[][] | null = null;
+      const how = () => (mode.value === "every" ? { every: Number(every.value) || 1 } : { ranges: ranges.value });
+      const sync = () => {
+        everyRow.hidden = mode.value !== "every";
+        rangesRow.hidden = mode.value !== "ranges";
+        try {
+          result = parts(how());
+          info.textContent = `${result.length} file${result.length === 1 ? "" : "s"}: ${result
+            .slice(0, 6)
+            .map((p) => (p.length === 1 ? `${p[0] + 1}` : `${p[0] + 1}-${p[p.length - 1] + 1}`))
+            .join(", ")}${result.length > 6 ? ", …" : ""}`;
+          info.classList.remove("error-text");
+        } catch (e) {
+          result = null;
+          info.textContent = (e as Error).message;
+          info.classList.add("error-text");
+        }
+      };
+      for (const el of [mode, every, ranges]) el.addEventListener("input", sync);
+      sync();
+      const done = (v: number[][] | null) => {
+        store(SPLIT_KEY, { mode: mode.value, every: Number(every.value) || 1, ranges: ranges.value });
+        close();
+        resolve(v);
+      };
+      escClose(box, () => done(null));
+      buttons(box, [
+        { label: "Cancel", onClick: () => done(null) },
+        { label: "Split", primary: true, onClick: () => (result ? done(result) : ranges.focus()) },
+      ]);
+    });
+  });
+}

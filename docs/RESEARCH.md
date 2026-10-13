@@ -86,12 +86,13 @@ Picked for everyday shop work: Shopee/Lazada shipping labels on a TSC label prin
 2. ✅ **Search a whole folder of PDFs** (done: **Folder** tab / Ctrl+Shift+F, also from the start screen; subfolders included; texts remembered in IndexedDB per file version; scans and locked files reported). Type a part number or car model once and search all supplier catalogs together; results list file + page and open there. Reuses the single-file search (shared text cache). Effort: medium.
 3. ✅ **Stamps and company seal** (done: **Stamp** tool with Thai/English stamps, optional date in the Thai calendar, custom text, saved seal/logo images with the white paper made transparent, this page or every page; **Numbers** and **Watermark** on every page, re-running replaces them). Save the company seal (ตราประทับ), signature or a "PAID" / "ได้รับเงินแล้ว" stamp once and place it in one click; add page numbers or a watermark to many pages at once. Builds on the existing image/signature tools. Effort: small.
 4. **OCR in Thai, Chinese and English** for scanned catalogs, receipts and photo PDFs, so they can be searched and copied (see item 1 of the list below). Should work offline (e.g. Tesseract with `tha`, `chi_sim`, `eng`) so documents never leave the PC. Effort: medium-large.
-5. **Export pages as images (JPG/PNG)** to post on Shopee, Lazada or LINE without screenshots. Effort: small.
+5. ✅ **Export pages as images (JPG/PNG)** (done: Pages panel, current / selected / all, 96-300 dpi; saved into a chosen folder, never overwriting) to post on Shopee, Lazada or LINE without screenshots. Effort: small.
 6. **Several files open at once (tabs) and a recent-files list.** Today opening a file closes the current one. Effort: medium.
 7. **Shrink PDF size** for sending by LINE or email (see "Compress" below). Effort: medium.
-8. **Split a PDF into several files** by page ranges or every N pages (today: extract selected pages only). Effort: small.
-9. **Translate Chinese supplier documents to Thai or English.** Optional, opt-in only: needs an AI service, so documents would leave the PC (see "AI features" below).
-10. **Password protection on save** (item 5 below).
+8. ✅ **Split a PDF into several files** (done: every N pages or ranges like 1-3, 4-10, 11-; split in a worker; each part keeps its bookmarks and metadata) by page ranges or every N pages (today: extract selected pages only). Effort: small.
+9. **Cut pages into pieces** (requested): a vertical and a horizontal cut at the same time, each set by percentage, on selected pages or all; each piece becomes its own page (2-up scans, A3 spreads, label sheets). Non-destructive (crop per page), undoable, saved as cropped pages.
+10. **Translate Chinese supplier documents to Thai or English.** Optional, opt-in only: needs an AI service, so documents would leave the PC (see "AI features" below).
+11. **Password protection on save** (item 5 below).
 
 ### General and professional users
 

@@ -29,7 +29,9 @@ import {
   type PageGeom,
 } from "./edit/pageDecor";
 import { renderWatermark } from "./edit/stamps";
-import { pageNumbersDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
+import { exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
+import { pagesToImages, splitInWorker } from "./save/pages";
+import { splitParts } from "./save/split";
 import { clearDraft, loadDraft, saveDraft } from "./edit/recovery";
 import { labelDialog } from "./labels/labelDialog";
 import { buildLabelPdf } from "./labels/labels";
@@ -634,6 +636,74 @@ export class App {
     }
   }
 
+  /** File name without .pdf, and the folder of the open file (desktop), for multi-file saves. */
+  private outputBase(): { base: string; folder?: string } {
+    const src = this.mainDoc!.source;
+    return { base: src.name.replace(/\.pdf$/i, ""), folder: src.path?.replace(/[\\/][^\\/]*$/, "") };
+  }
+
+  /** Split into several PDFs (every N pages or by ranges), one file per part. */
+  async splitIntoFiles(): Promise<void> {
+    if (!this.mainDoc) return;
+    const s = this.history.state;
+    const total = s.pages.length;
+    const parts = await splitDialog(total, (how) => splitParts(total, how));
+    if (!parts) return;
+    const { base, folder } = this.outputBase();
+    const busy = progressOverlay("Preparing…");
+    try {
+      const bytes = await buildPdf(s, this.store, this.images, { onProgress: (_l, f) => busy.update("Preparing…", f * 0.4) });
+      const outs = await splitInWorker(bytes, parts, (f) => busy.update("Splitting…", 0.4 + f * 0.5));
+      const label = (p: number[]) => (p.length === 1 ? `p${p[0] + 1}` : `p${p[0] + 1}-${p[p.length - 1] + 1}`);
+      async function* files() {
+        for (const [k, b] of outs.entries()) yield { name: `${base} ${label(parts![k])}.pdf`, bytes: b, mime: "application/pdf" };
+      }
+      busy.close();
+      const res = await this.platform.saveMany(files(), folder);
+      if (res) toast(`Saved ${res.count} PDF file${res.count === 1 ? "" : "s"}${res.folder ? ` to ${res.folder}` : ""}.`, "ok", 5000);
+    } catch (e) {
+      console.error(e);
+      toast(`Split failed: ${(e as Error)?.message ?? e}`, "error", 8000);
+    } finally {
+      busy.close();
+    }
+  }
+
+  /** Export pages (current / selected / all) as PNG or JPG files. */
+  async exportImages(): Promise<void> {
+    if (!this.mainDoc) return;
+    const s = this.history.state;
+    const sel = this.thumbs.selected;
+    const choice = await exportImagesDialog(sel.size, s.pages.length);
+    if (!choice) return;
+    const indices =
+      choice.pages === "all"
+        ? s.pages.map((_, i) => i)
+        : choice.pages === "selected"
+          ? s.pages.flatMap((p, i) => (sel.has(p.id) ? [i] : []))
+          : [this.activeViewer.currentIndex];
+    const { base, folder } = this.outputBase();
+    const busy = progressOverlay("Preparing…");
+    try {
+      const bytes = await buildPdf(s, this.store, this.images, { onProgress: (_l, f) => busy.update("Preparing…", f * 0.3) });
+      const ext = choice.format === "png" ? "png" : "jpg";
+      const width = String(s.pages.length).length;
+      const images = pagesToImages(bytes, indices, choice, (f) => busy.update("Rendering pages…", 0.3 + f * 0.7));
+      async function* files() {
+        for await (const { index, blob } of images) {
+          yield { name: `${base} p${String(index + 1).padStart(width, "0")}.${ext}`, bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type };
+        }
+      }
+      const res = await this.platform.saveMany(files(), folder);
+      if (res) toast(`Saved ${res.count} image${res.count === 1 ? "" : "s"}${res.folder ? ` to ${res.folder}` : ""}.`, "ok", 5000);
+    } catch (e) {
+      console.error(e);
+      toast(`Export failed: ${(e as Error)?.message ?? e}`, "error", 8000);
+    } finally {
+      busy.close();
+    }
+  }
+
   // ================================================================ page ops
 
   private selectedPages(): PageRef[] {
@@ -689,6 +759,12 @@ export class App {
         break;
       case "extract":
         void this.extractSelected();
+        break;
+      case "splitFiles":
+        void this.splitIntoFiles();
+        break;
+      case "exportImages":
+        void this.exportImages();
         break;
     }
   }
