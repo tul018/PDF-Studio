@@ -44,7 +44,7 @@ This is the most common complaint. It almost always comes down to **unbounded me
 | Missing CJK / Thai / Arabic fonts, non-embedded fonts | PDF.js CMaps and standard font data ship with the app, and system fonts are allowed. Works offline. |
 | Scanned PDFs (JPEG2000, JBIG2), ICC color | PDF.js WebAssembly decoders and ICC profiles ship locally (`public/pdfjs/`). |
 | Damaged files and broken xref tables | PDF.js recovery parser. If a single page fails to render, that page shows an inline error and the rest stay usable. |
-| Password-protected PDFs | Password prompt, with a retry on a wrong password. Edits to encrypted files are saved as an image-based copy, because pdf-lib cannot re-encrypt. |
+| Password-protected PDFs | Password prompt, with a retry on a wrong password. Edits to encrypted files are saved as an image-based copy **without the password**, because pdf-lib cannot encrypt (see roadmap item 5). |
 | Older WebViews (iOS 15/16 WKWebView, older WebView2) | Uses the **PDF.js legacy build**, which includes polyfills. The modern build calls APIs such as `Map.getOrInsertComputed` that these WebViews lack. This was found during testing. |
 | Annotations made here, viewed elsewhere | Shapes, ink, text and images are written into the page content, so they look identical in every viewer. Comments are written as **real PDF sticky-note annotations**, editable in Acrobat, Preview and Edge. |
 | Non-Latin text typed by the user (Thai, CJK, emoji) | The standard PDF font can't encode these characters, so text boxes containing them are rendered with system fonts (which handle complex scripts correctly) into a 288-dpi image. |
@@ -78,15 +78,94 @@ This is the most common complaint. It almost always comes down to **unbounded me
 
 **Reliability:** streaming open · bounded memory · worker-based save · atomic writes · crash recovery.
 
+## Planned features (requested)
+
+Picked for everyday shop work: Shopee/Lazada shipping labels on a TSC label printer, receipts, and Thai/Chinese supplier catalogs. Suggested order: 1, 2, 3 first.
+
+1. **Label printing mode.** One button: find each shipping label on the page (often several per A4 sheet, or with wide margins), crop it, rotate it, fit it to the label size (e.g. 100×150 mm) and print them all to the TSC printer. Effort: medium.
+2. **Search a whole folder of PDFs.** Type a part number or car model once and search all supplier catalogs together; results list file + page and open there. Reuses the single-file search (shared text cache). Effort: medium.
+3. **Stamps and company seal.** Save the company seal (ตราประทับ), signature or a "PAID" / "ได้รับเงินแล้ว" stamp once and place it in one click; add page numbers or a watermark to many pages at once. Builds on the existing image/signature tools. Effort: small.
+4. **OCR in Thai, Chinese and English** for scanned catalogs, receipts and photo PDFs, so they can be searched and copied (see item 1 of the list below). Should work offline (e.g. Tesseract with `tha`, `chi_sim`, `eng`) so documents never leave the PC. Effort: medium-large.
+5. **Export pages as images (JPG/PNG)** to post on Shopee, Lazada or LINE without screenshots. Effort: small.
+6. **Several files open at once (tabs) and a recent-files list.** Today opening a file closes the current one. Effort: medium.
+7. **Shrink PDF size** for sending by LINE or email (see "Compress" below). Effort: medium.
+8. **Split a PDF into several files** by page ranges or every N pages (today: extract selected pages only). Effort: small.
+9. **Translate Chinese supplier documents to Thai or English.** Optional, opt-in only: needs an AI service, so documents would leave the PC (see "AI features" below).
+10. **Password protection on save** (item 5 below).
+
+### General and professional users
+
+Suggested next after the shop items, marked ★: they are used often, set a professional PDF app apart from a basic viewer, and mostly build on what the app already does.
+
+**Everyone**
+
+1. ★ **Make a PDF from photos or scans.** Pick phone photos or scanner images; pages are straightened, cropped and saved as one clean PDF.
+2. ★ **App menus in Thai and Chinese** (today only document content supports them; the UI is English).
+3. **Reading modes:** two pages side by side (book), single page at a time, and a night mode that darkens the pages themselves.
+4. **Read aloud** in Thai and English with the voices built into Windows.
+5. **Settings page:** default zoom, page colour, save folder, keyboard shortcuts.
+6. **Automatic updates** (Tauri updater).
+
+**Professional (office, legal, accounting, engineering)**
+
+7. ★ **Compare two PDFs:** show what changed between two versions of a contract or quote, side by side (split view is half of this).
+8. ★ **Redact by search:** black out every phone number, ID card number, bank account or chosen word in one step (true redaction exists; this adds pattern search).
+9. ★ **Remove hidden information** before sending: author, editing history, comments, attachments, hidden layers.
+10. **Comments panel:** all comments in one list, reply, mark resolved, export.
+11. **Create fillable forms:** add text boxes and checkboxes, not only fill existing ones.
+12. **Headers, footers and Bates numbering** (running document numbers on every page, for legal files).
+13. **Edit bookmarks:** add, rename and reorder the table of contents.
+14. **Measuring tools** for drawings and floor plans: distance and area at a set scale.
+15. **Convert to Word or Excel.** Hard to do well; a later item.
+16. **Batch actions:** apply the same steps (stamp, compress, password) to many files at once.
+
+### AI assistant: Claude (and later ChatGPT) controls PDF Studio (requested)
+
+Chat in the Claude app as usual ("open the catalog in PDF Studio and add a cover page") and Claude operates PDF Studio directly. It uses the user's existing Claude subscription: no API key in PDF Studio, no extra billing. (Third-party apps can't log in with a Claude.ai or ChatGPT subscription; this connector is the supported way.)
+
+- **How:** PDF Studio runs a local **MCP server** (Model Context Protocol). Claude Desktop and Claude Code connect to local MCP servers directly.
+- **What Claude can do:** we choose which functions to expose; plan is nearly all of them:
+  - open, save, save as, merge, extract, print;
+  - go to a page, zoom, split view, search, read any page's text;
+  - see a page as an image (to check layouts it made);
+  - add text, highlights, shapes, comments, images, stamps, white-out, redaction;
+  - rotate, delete, reorder, insert and create pages with content;
+  - read and fill forms; marks, bookmarks, metadata;
+  - every new feature as it is added (label mode, OCR, password...).
+- **Limits:** cannot draw a signature by hand (places the saved signature/seal); cannot open a protected PDF without the password.
+- **Safety:** saving over a file, deleting pages and redaction ask for confirmation in PDF Studio; all edits stay undoable until saved. The MCP server only listens on this PC.
+- **Privacy:** pages Claude reads or sees are sent to Anthropic, as in any Claude chat. Off until the user turns the connector on.
+- **ChatGPT later:** as far as known today, ChatGPT only connects to MCP servers reachable over the internet, so it would need a secure tunnel/relay to this PC (more setup and security work). Check OpenAI's current rules first. Design the tools so the same set serves both.
+- **Option A (later, optional):** an AI panel inside PDF Studio using the user's own Claude/OpenAI API key (stored in Windows Credential Manager, pay per use).
+
+### Future (requested, no AI needed)
+
+1. **Work together live, from anywhere, at no cost.** Two or more people in different places open the same PDF and annotate at the same time, seeing each other's cursors, marks, comments and page edits within about a second; optional "Follow" mode keeps everyone on the presenter's page.
+   - **Flow:** the host clicks **Share live** and sends the link or code (e.g. by LINE); others open it in PDF Studio. Any participant can save a copy with all edits.
+   - **Introduction (signaling):** a tiny **Cloudflare Worker on the free tier** (one free Cloudflare account, set up once) lets the PCs find each other.
+   - **Direct connection:** then the PCs talk **peer-to-peer (WebRTC)**, using free public STUN servers (e.g. Google's). Edits, cursors and the PDF itself go straight from the host to the others; nothing is stored on a server.
+   - **Backup relay:** when a network blocks direct connections (common on Thai mobile networks / CGNAT), the same free Worker relays the messages. Edits are tiny, so a shop's use stays far inside the free limits.
+   - **Edits merge automatically** with a CRDT (e.g. Yjs); every annotation already has its own ID and the edit model is a small JSON layer over the file, so only small changes travel, never the whole file.
+   - **Safety:** link/code only, links can expire, host can make others view-only or comment-only, encrypted in transit, original file unchanged until someone saves.
+   - **Limits / to check before building:** the host's PDF Studio must stay open while hosting; confirm the providers' current free-tier limits (they can change).
+   - **Build order:** direct connection, then backup relay, then sending the PDF to participants who don't have it; a browser viewer for people without PDF Studio later.
+   - **Simpler variants:** same Wi-Fi with the host PC as meeting point (no internet service at all), or Tailscale for staff devices.
+2. **QR code detection.** Find QR codes on pages and make them clickable (open the link, copy the text), including in scanned pages; optionally also generate a QR code stamp (e.g. an order tracking link). Uses a standard QR decoder library (e.g. zxing / jsQR) on the rendered page, so it works offline.
+3. **GPU rendering.** Draw pages with the graphics card for even smoother scrolling and zooming of huge, image-heavy files and lower CPU use. PDF.js 6 ships early WebGPU support (`webgpu` module) and an `enableHWA` (hardware acceleration) option: measure both with `npm run bench` (CPU x1 and x4) before switching, and keep the current path as a fallback for PCs without a suitable GPU.
+
 ## Not done yet (roadmap)
 
 These are significant features that need more work, or a native SDK, to do properly:
 
-1. **OCR** for scanned documents. Could use Apple's Vision framework on iOS and `Windows.Media.Ocr` on Windows, called from the Rust side.
+1. **OCR** for scanned documents, in Thai, Chinese and English (requested, see "Planned features" 4). Could use Apple's Vision framework on iOS and `Windows.Media.Ocr` on Windows, called from the Rust side, or Tesseract where a language isn't available.
 2. **Certificate-based digital signatures** (PAdES/PKI). The current Sign tool places a handwritten signature image, which is legally weaker.
 3. **Editing existing text in place.** Today you cover it with white-out and type over it.
 4. **Native PDF annotations for every type**, so others can edit them. Only comments are native today; everything else is flattened into the page.
-5. **Compress / optimize, PDF/A export, setting a password on save.**
-6. **Incremental save**, which appends changes instead of rewriting the file. That would make saving very large files much cheaper.
-7. **XFA forms** (a legacy format that PDF.js renders only partially).
-8. **AI features** (summarize, ask the document, smart form fill) would fit well as an optional, opt-in panel. They need an API key or service and a privacy decision, so they are deliberately left out of v1.
+5. **Password protection on save** (requested). Today the app can only *open* protected PDFs. Planned:
+   - a "Protect with password" option when saving, with standard AES-256 encryption (opens in Adobe Reader, Edge, phones), probably done on the Rust side so large files stay fast;
+   - edited protected PDFs keep their password and stay real, searchable text, instead of becoming an unprotected image-based copy as now (pdf-lib cannot encrypt);
+   - until then at least, a clear warning before any save that removes protection (the current message only says "image-based copy").
+6. **Compress / optimize** (requested, for LINE/email size limits), **PDF/A export.**
+7. **Incremental save**, which appends changes instead of rewriting the file. That would make saving very large files much cheaper.
+8. **XFA forms** (a legacy format that PDF.js renders only partially).
+9. **AI features** (summarize, ask the document, smart form fill) would fit well as an optional, opt-in panel. They need an API key or service and a privacy decision, so they are deliberately left out of v1.

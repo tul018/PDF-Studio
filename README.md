@@ -88,6 +88,10 @@ npm run ios:build                # release build (.ipa); set APPLE_DEVELOPMENT_T
 
 On macOS, use Cmd instead of Ctrl.
 
+## Planned features
+
+Label printing mode for shipping labels, search across a folder of PDFs, stamps and company seal, Thai/Chinese/English OCR, export pages as images, tabs, shrink PDF size, split into files, optional translation, and password protection on save. For general and professional users: make PDF from photos, Thai/Chinese menus, reading modes, read aloud, settings, auto-update, compare two PDFs, redact by search, remove hidden information, comments panel, create forms, headers/footers and Bates numbering, edit bookmarks, measuring tools, convert to Word/Excel and batch actions. AI assistant: Claude (later ChatGPT) controls PDF Studio through an MCP connector, using the existing Claude subscription. Future: work together live, QR code detection and GPU rendering. Details and order: [docs/RESEARCH.md › Planned features](docs/RESEARCH.md#planned-features-requested).
+
 ## Known limitations
 
-See the roadmap at the end of [docs/RESEARCH.md](docs/RESEARCH.md): OCR, certificate (PKI) signatures, editing existing text, native annotations for every type, compression/PDF-A, incremental save, XFA forms, and optional AI features. Saving still loads the full file into memory (viewing never does). The app warns before saving very large files on iOS.
+See the roadmap at the end of [docs/RESEARCH.md](docs/RESEARCH.md): OCR, certificate (PKI) signatures, password protection on save (protected PDFs can be opened, but an edited one is saved without its password), editing existing text, native annotations for every type, compression/PDF-A, incremental save, XFA forms, and optional AI features. Saving still loads the full file into memory (viewing never does). The app warns before saving very large files on iOS.
