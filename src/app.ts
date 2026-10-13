@@ -102,6 +102,8 @@ export class App {
   private fileVersion = "";
   private canvasChangePending = false;
   private folderPanel!: FolderPanel;
+  /** Next open goes to a given place (folder search result): skip restoring the last position. */
+  private skipRestoreView = false;
   private tabs: Tab[] = [];
   private activeTab = -1;
   private tabBar!: TabBar;
@@ -524,7 +526,8 @@ export class App {
             this.activeViewer.scrollToPosition(restore.view.index, restore.view.fy);
             return;
           }
-          this.restoreView();
+          if (this.skipRestoreView) this.skipRestoreView = false;
+          else this.restoreView();
           void this.offerRecovery();
         });
         if (main.encrypted) toast("Protected PDF: saving edits removes the password (pages saved as images).", "info", 6000);
@@ -751,8 +754,12 @@ export class App {
   private async openSearchResult(source: PdfSource, pageIndex: number, query: string): Promise<void> {
     const same = () => !!this.mainDoc && fileKeyOf(this.mainDoc.source) === fileKeyOf(source);
     if (!same()) {
+      this.skipRestoreView = true; // cleared by the open, once it has placed the view
       await this.openSources([source]);
-      if (!same()) return; // cancelled (unsaved changes) or failed
+      if (!same()) {
+        this.skipRestoreView = false;
+        return;
+      } // cancelled (unsaved changes) or failed
       // Opening restores the last reading position on the next frames; go to the result after that.
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     }
