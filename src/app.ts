@@ -12,12 +12,24 @@ import {
   movePages,
   pagesForDoc,
   rotatePages,
+  TEXT_FONTS,
   uid,
   type EditState,
   type PageRef,
   type StoredImage,
 } from "./edit/model";
 import { AnnotationOverlay, type Tool } from "./edit/overlay";
+import {
+  imageOnPages,
+  PAGE_NUMBER_PREFIX,
+  pageNumberAnnotations,
+  replaceByPrefix,
+  STAMP_PREFIX,
+  WATERMARK_PREFIX,
+  type PageGeom,
+} from "./edit/pageDecor";
+import { renderWatermark } from "./edit/stamps";
+import { pageNumbersDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
 import { clearDraft, loadDraft, saveDraft } from "./edit/recovery";
 import { labelDialog } from "./labels/labelDialog";
 import { buildLabelPdf } from "./labels/labels";
@@ -705,6 +717,60 @@ export class App {
     if (img) this.activePane.overlay.placeImage(img.id, img.img, 160);
   }
 
+  /** How a page is displayed (for placing things where the reader sees them). */
+  private geom = (ref: PageRef): PageGeom => ({ viewBox: this.store.viewBox(ref), rotation: this.store.rotation(ref) });
+
+  /** Stamp (PAID, ได้รับเงินแล้ว, company seal...): on this page to drag into place, or on every page. */
+  private async addStamp(): Promise<void> {
+    if (!this.mainDoc) return;
+    const pick = await stampDialog(() => this.platform.pickImage());
+    if (!pick) return;
+    const img = await this.storeImage(pick.png);
+    if (!img) return;
+    if (!pick.allPages) return this.activePane.overlay.placeImage(img.id, img.img, 170);
+    const s = this.history.state;
+    const added = imageOnPages(s.pages, this.geom, img.id, img.img.width, img.img.height, {
+      position: "bottom-right",
+      widthPt: 150,
+      idPrefix: STAMP_PREFIX,
+    });
+    this.history.push({ ...s, annotations: [...s.annotations, ...added] });
+    toast(`Stamp added to ${added.length} page${added.length === 1 ? "" : "s"}. Undo (Ctrl+Z) removes them all.`, "ok", 4500);
+  }
+
+  private async addPageNumbers(): Promise<void> {
+    if (!this.mainDoc) return;
+    const has = this.history.state.annotations.some((a) => a.id.startsWith(PAGE_NUMBER_PREFIX));
+    const o = await pageNumbersDialog(has);
+    if (!o) return;
+    const s = this.history.state;
+    if (o === "remove") return this.history.push(replaceByPrefix(s, PAGE_NUMBER_PREFIX, []));
+    const ctx = document.createElement("canvas").getContext("2d")!;
+    const measure = (text: string, size: number) => {
+      ctx.font = `${size}px ${TEXT_FONTS}`;
+      return ctx.measureText(text).width;
+    };
+    this.history.push(replaceByPrefix(s, PAGE_NUMBER_PREFIX, pageNumberAnnotations(s.pages, this.geom, o, measure)));
+  }
+
+  private async addWatermark(): Promise<void> {
+    if (!this.mainDoc) return;
+    const has = this.history.state.annotations.some((a) => a.id.startsWith(WATERMARK_PREFIX));
+    const o = await watermarkDialog(has);
+    if (!o) return;
+    if (o === "remove") return this.history.push(replaceByPrefix(this.history.state, WATERMARK_PREFIX, []));
+    const img = await this.storeImage(await renderWatermark(o.text, o.color, o.opacity));
+    if (!img) return;
+    const s = this.history.state;
+    // One image shared by every page: stored (and saved) once.
+    const added = imageOnPages(s.pages, this.geom, img.id, img.img.width, img.img.height, {
+      position: "middle-center",
+      widthFraction: 0.75,
+      idPrefix: WATERMARK_PREFIX,
+    });
+    this.history.push(replaceByPrefix(s, WATERMARK_PREFIX, added));
+  }
+
   /** Decode, downscale huge photos (a 48 MP iPhone photo is 190 MB decoded), re-encode. */
   private async storeImage(blob: Blob): Promise<{ id: string; img: StoredImage } | null> {
     try {
@@ -1013,6 +1079,12 @@ export class App {
         return void this.print();
       case "labels":
         return void this.printLabels();
+      case "stamp":
+        return void this.addStamp();
+      case "pageNumbers":
+        return void this.addPageNumbers();
+      case "watermark":
+        return void this.addWatermark();
       case "folderSearch":
         return this.showSidebarTab("folder");
       case "undo":

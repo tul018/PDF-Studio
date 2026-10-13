@@ -9,7 +9,7 @@
 //                    many Chinese PDFs use) and Thai (embedded system font,
 //                    when one is found), with words split into separate text
 //                    pieces and across lines - the hard cases for search.
-import { deflateSync } from "node:zlib";
+import { crc32, deflateSync } from "node:zlib";
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -197,6 +197,30 @@ for (const [name, fn] of [["basic.pdf", basic], ["form.pdf", form], ["heavy-imag
   const t = Date.now();
   await fn();
   console.log(`${name} written in ${Date.now() - t} ms`);
+}
+
+// seal.png: a red ring on white paper, like a scanned company seal (stamp tests).
+if (force || !existsSync(join(out, "seal.png"))) {
+  const W = 160, H = 160;
+  const raw = Buffer.alloc((W * 3 + 1) * H);
+  for (let y = 0; y < H; y++) {
+    raw[y * (W * 3 + 1)] = 0; // filter: none
+    for (let x = 0; x < W; x++) {
+      const r = Math.hypot(x - W / 2, y - H / 2);
+      const ink = r > 55 && r < 70;
+      const o = y * (W * 3 + 1) + 1 + x * 3;
+      raw[o] = ink ? 200 : 250; raw[o + 1] = ink ? 20 : 250; raw[o + 2] = ink ? 30 : 247;
+    }
+  }
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type), data]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td));
+    return Buffer.concat([len, td, crc]);
+  };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(W, 0); ihdr.writeUInt32BE(H, 4); ihdr[8] = 8; ihdr[9] = 2;
+  writeFileSync(join(out, "seal.png"), Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]));
+  console.log("seal.png written");
 }
 
 // A folder of PDFs for folder search: basic.pdf, a subfolder with languages.pdf,

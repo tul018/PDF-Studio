@@ -43,6 +43,9 @@ const P: Record<string, string> = {
   more: "M5 12h.01 M12 12h.01 M19 12h.01",
   print: "M7 9V3h10v6 M7 17H4v-7h16v7h-3 M7 14h10v7H7z",
   folderSearch: "M3 7h6l2 2h10v3 M3 7v12h8 M16.5 13a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z M21 21l-2-2",
+  stamp: "M9 3h6v6l3 3v3H6v-3l3-3z M5 19h14",
+  hash: "M5 9h14 M5 15h14 M10 4 8 20 M16 4l-2 16",
+  watermark: "M12 3c4 5 6 8 6 11a6 6 0 0 1-12 0c0-3 2-6 6-11z",
   label: "M4 5v14 M7 5v14 M10 5v10 M13 5v14 M17 5v10 M20 5v14 M10 18h1 M17 18h1",
 };
 

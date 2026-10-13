@@ -10,3 +10,4 @@ src-tauri/gen/
 *.log
 bench-results/
 tests/fixtures/catalogs/
+tests/fixtures/*.png
