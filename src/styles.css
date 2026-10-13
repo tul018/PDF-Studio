@@ -118,12 +118,22 @@ select, .page-input, .modal-input, .searchbar input[type="search"] {
 .btn.block { width: 100%; }
 
 /* ---------------------------------------------------------------- layout */
+.main-bar { grid-row: 1; }
+.tool-bar { grid-row: 2; }
+.main { grid-row: 3; }
+.statusbar { grid-row: 4; }
 .main { position: relative; display: flex; min-height: 0; min-width: 0; overflow: hidden; }
 #sidebar {
   width: var(--sidebar-w); flex: none; display: flex; flex-direction: column;
   background: var(--surface); border-right: 1px solid var(--border); min-height: 0;
+  /* Above the start screen (.empty covers the whole main area). */
+  position: relative; z-index: 2;
 }
-body.sidebar-hidden #sidebar, body:not(.has-doc) #sidebar { display: none; }
+/* Panels set their own display; hidden ones must still disappear. */
+.panel[hidden] { display: none !important; }
+body.sidebar-hidden #sidebar, body:not(.has-doc):not(.folder-open) #sidebar { display: none; }
+/* Without a document only the Folder tab makes sense. */
+body:not(.has-doc) .tabs button:not([data-tab="folder"]) { display: none; }
 .tabs { display: flex; border-bottom: 1px solid var(--border); }
 .tabs button { flex: 1; border: 0; background: none; padding: 9px 0; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; }
 .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
@@ -155,6 +165,23 @@ body.sidebar-hidden #sidebar, body:not(.has-doc) #sidebar { display: none; }
 .outline-toggle, .outline-spacer { width: 18px; flex: none; border: 0; background: none; cursor: pointer; color: var(--muted); padding: 4px 0; }
 .outline-link { border: 0; background: none; text-align: left; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 13px; }
 .outline-link:hover { background: var(--surface-2); }
+
+/* folder search */
+.folder-panel { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.folder-panel[hidden] { display: none; }
+.folder-panel > * { flex: none; } /* the panel scrolls; its rows must not shrink */
+.folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.folder-search { display: flex; align-items: center; gap: 6px; }
+.folder-search input[type="search"] { flex: 1; min-width: 0; }
+.folder-status { min-height: 1em; }
+.folder-results { list-style: none; margin: 0; padding: 0; }
+.folder-file { margin: 8px 0 4px; }
+.folder-file-name { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; padding: 2px 4px; }
+.folder-hit { display: flex; gap: 8px; width: 100%; border: 0; background: none; text-align: left; padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 12.5px; line-height: 1.35; color: inherit; }
+.folder-hit:hover, .folder-hit:focus-visible { background: var(--surface-2); }
+.folder-hit-page { flex: none; color: var(--muted); min-width: 40px; }
+.folder-hit-text { overflow-wrap: anywhere; }
+.folder-hit mark { background: #ffe58a; color: #000; border-radius: 2px; padding: 0 1px; }
 
 /* marks */
 [data-panel="marks"] { padding: 8px; }

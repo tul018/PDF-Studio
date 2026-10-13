@@ -128,6 +128,61 @@ fn initial_files() -> Vec<String> {
         .collect()
 }
 
+/// One PDF found by `list_pdfs`: path, size, last-modified time (ms).
+#[derive(serde::Serialize)]
+struct PdfEntry {
+    path: String,
+    size: u64,
+    modified: u64,
+}
+
+/// Most PDFs a folder search will list (a guard against picking a whole drive).
+const MAX_LISTED: usize = 20_000;
+
+/// Every PDF in `dir` and its subfolders (folder search). Hidden folders and
+/// files (".git", "$RECYCLE.BIN"...) are skipped; symlinks are not followed.
+fn collect_pdfs(dir: &Path, depth: u32, out: &mut Vec<PdfEntry>) {
+    if depth > 12 || out.len() >= MAX_LISTED {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') || name.starts_with('$') {
+            continue;
+        }
+        let Ok(kind) = entry.file_type() else { continue };
+        let path = entry.path();
+        if kind.is_dir() {
+            collect_pdfs(&path, depth + 1, out);
+        } else if kind.is_file() && name.to_lowercase().ends_with(".pdf") {
+            let Ok(meta) = entry.metadata() else { continue };
+            let modified = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            out.push(PdfEntry { path: path.to_string_lossy().into_owned(), size: meta.len(), modified });
+        }
+        if out.len() >= MAX_LISTED {
+            return;
+        }
+    }
+}
+
+#[tauri::command]
+fn list_pdfs(dir: String) -> Result<Vec<PdfEntry>, String> {
+    let root = Path::new(&dir);
+    if !root.is_dir() {
+        return Err(format!("not a folder: {dir}"));
+    }
+    let mut out = Vec::new();
+    collect_pdfs(root, 0, &mut out);
+    out.sort_by(|a, b| a.path.to_lowercase().cmp(&b.path.to_lowercase()));
+    Ok(out)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -139,7 +194,8 @@ pub fn run() {
             read_file,
             write_file,
             save_to_documents,
-            initial_files
+            initial_files,
+            list_pdfs
         ])
         .run(tauri::generate_context!())
         .expect("error while running PDF Studio");
@@ -158,6 +214,22 @@ mod tests {
         atomic_write(&target, b"%PDF-new").unwrap();
         assert_eq!(fs::read(&target).unwrap(), b"%PDF-new");
         assert!(!dir.join(".a.pdf.pdfstudio-tmp").exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn list_pdfs_finds_nested_pdfs_and_skips_hidden() {
+        let dir = std::env::temp_dir().join(format!("pdfstudio-list-{}", std::process::id()));
+        fs::create_dir_all(dir.join("sub/deeper")).unwrap();
+        fs::create_dir_all(dir.join(".hidden")).unwrap();
+        for p in ["a.pdf", "sub/B.PDF", "sub/deeper/c.pdf", ".hidden/x.pdf", "notes.txt"] {
+            fs::write(dir.join(p), b"%PDF-1.4").unwrap();
+        }
+        let found = list_pdfs(dir.to_string_lossy().into_owned()).unwrap();
+        let names: Vec<_> = found.iter().map(|e| Path::new(&e.path).file_name().unwrap().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, vec!["a.pdf", "B.PDF", "c.pdf"]);
+        assert!(found.iter().all(|e| e.size == 8));
+        assert!(list_pdfs(dir.join("a.pdf").to_string_lossy().into_owned()).is_err());
         fs::remove_dir_all(&dir).unwrap();
     }
 }

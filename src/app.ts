@@ -28,6 +28,7 @@ import { icon } from "./ui/icons";
 import { printPdf } from "./ui/print";
 import { FormLinkLayer } from "./viewer/formLayer";
 import { attachGestures } from "./viewer/gestures";
+import { FolderPanel } from "./viewer/folderPanel";
 import { newTextCache, Search } from "./viewer/search";
 import { Thumbnails } from "./viewer/thumbnails";
 import { Viewer, type Decorator, type Slot } from "./viewer/viewer";
@@ -83,6 +84,7 @@ export class App {
   private fileKey = "";
   private fileVersion = "";
   private canvasChangePending = false;
+  private folderPanel!: FolderPanel;
   private panes: Pane[] = [];
   private active = 0;
   private thumbs!: Thumbnails;
@@ -131,6 +133,8 @@ export class App {
       );
     };
 
+    this.folderPanel = new FolderPanel($('[data-panel="folder"]'), this.platform);
+    this.folderPanel.onOpen = (source, pageIndex, query) => void this.openSearchResult(source, pageIndex, query);
     this.bindToolbar();
     this.bindKeyboard();
     this.bindDragDrop();
@@ -565,6 +569,23 @@ export class App {
     }
   }
 
+  /** Folder search result: open that file (unless it's the open one) at that page, word highlighted. */
+  private async openSearchResult(source: PdfSource, pageIndex: number, query: string): Promise<void> {
+    const same = () => !!this.mainDoc && fileKeyOf(this.mainDoc.source) === fileKeyOf(source);
+    if (!same()) {
+      await this.openSources([source]);
+      if (!same()) return; // cancelled (unsaved changes) or failed
+      // Opening restores the last reading position on the next frames; go to the result after that.
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    }
+    const i = this.history.state.pages.findIndex((p) => p.docId === this.mainDoc!.id && p.srcIndex === pageIndex);
+    const pane = this.activePane;
+    if (i >= 0) pane.viewer.scrollToPage(i);
+    pane.bar.hidden = false;
+    $<HTMLInputElement>(".search-input", pane.bar).value = query;
+    this.runSearch(pane, Math.max(0, i));
+  }
+
   async print(): Promise<void> {
     if (!this.mainDoc) return;
     for (const p of this.panes) p.overlay.commitTextEdit();
@@ -898,12 +919,13 @@ export class App {
     p.viewer.redecorate();
   }
 
-  private runSearch(p: Pane): void {
+  /** Search from page `startIndex` (default: the pane's current page); hits before it come last. */
+  private runSearch(p: Pane, startIndex?: number): void {
     clearTimeout(p.searchTimer);
     p.searchTimer = window.setTimeout(() => {
       const q = $<HTMLInputElement>(".search-input", p.bar).value;
       const cs = $<HTMLInputElement>(".search-case", p.bar).checked;
-      void p.search.run(q, this.history.state.pages, p.viewer.currentIndex, cs);
+      void p.search.run(q, this.history.state.pages, startIndex ?? p.viewer.currentIndex, cs);
     }, 220);
   }
 
@@ -991,6 +1013,8 @@ export class App {
         return void this.print();
       case "labels":
         return void this.printLabels();
+      case "folderSearch":
+        return this.showSidebarTab("folder");
       case "undo":
         return this.history.undo();
       case "redo":
@@ -1053,6 +1077,8 @@ export class App {
 
   private showSidebarTab(tab: string): void {
     document.body.classList.remove("sidebar-hidden");
+    document.body.classList.toggle("folder-open", tab === "folder");
+    if (tab === "folder") void this.folderPanel.show();
     document.querySelectorAll<HTMLElement>("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
     document.querySelectorAll<HTMLElement>("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== tab));
   }
@@ -1072,7 +1098,7 @@ export class App {
           s: () => void this.save(e.shiftKey),
           z: () => (e.shiftKey ? this.history.redo() : this.history.undo()),
           y: () => this.history.redo(),
-          f: () => this.openSearch(),
+          f: () => (e.shiftKey ? this.action("folderSearch") : this.openSearch()),
           d: () => void this.addMark(),
           "\\": () => this.toggleSplit(),
           "=": () => v.setZoom(nextZoom(v.zoom, 1)),

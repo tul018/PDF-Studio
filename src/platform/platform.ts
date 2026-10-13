@@ -19,6 +19,14 @@ export interface SaveResult {
   inPlace: boolean;
 }
 
+/** A folder picked for folder search: its PDFs (in subfolders too). */
+export interface PickedFolder {
+  label: string;
+  /** Native path (desktop), to reopen it next time. */
+  path?: string;
+  sources: PdfSource[];
+}
+
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 let invokeFn: Invoke | null = null;
@@ -96,6 +104,43 @@ export class Platform {
       document.body.appendChild(input);
       input.click();
     });
+  }
+
+  /** Choose a folder; returns every PDF in it and its subfolders. */
+  async pickFolder(): Promise<PickedFolder | null> {
+    if (this.kind === "desktop") {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const dir = await open({ directory: true });
+      if (!dir || Array.isArray(dir)) return null;
+      return this.listFolder(String(dir));
+    }
+    // Browser / iOS: a folder chooser hands over the files directly.
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.multiple = true;
+      input.setAttribute("webkitdirectory", "");
+      input.style.display = "none";
+      input.addEventListener("change", () => {
+        const files = [...(input.files ?? [])].filter((f) => /\.pdf$/i.test(f.name));
+        const label = (input.files?.[0] as (File & { webkitRelativePath?: string }) | undefined)?.webkitRelativePath?.split("/")[0] ?? "Folder";
+        files.sort((a, b) => ((a as File & { webkitRelativePath: string }).webkitRelativePath ?? a.name).localeCompare((b as File & { webkitRelativePath: string }).webkitRelativePath ?? b.name));
+        resolve({ label, sources: files.map((f) => new FileSource(f)) });
+        input.remove();
+      });
+      input.addEventListener("cancel", () => {
+        resolve(null);
+        input.remove();
+      });
+      document.body.appendChild(input);
+      input.click();
+    });
+  }
+
+  /** The PDFs of a folder on disk (desktop). */
+  async listFolder(path: string): Promise<PickedFolder> {
+    const list = await invoke<{ path: string; size: number; modified: number }[]>("list_pdfs", { dir: path });
+    return { label: path, path, sources: list.map((e) => new NativeSource(e.path, e.size, e.modified)) };
   }
 
   async pickImage(): Promise<File | null> {

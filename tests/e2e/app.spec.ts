@@ -17,11 +17,13 @@ test("opens a PDF, navigates and searches", async ({ page }) => {
   await expect(page.locator("#status-page")).toHaveText("Page 6 of 12");
   await page.keyboard.press("Control+f");
   await page.fill(".pane.active .search-input", "needle");
-  await expect(page.locator(".pane.active .search-count")).toHaveText("1 of 2");
-  await expect(page.locator(".search-hit").first()).toBeAttached();
-  await page.press(".pane.active .search-input", "Enter");
+  // From page 6 the current hit is the next one ahead (page 10), not page 3 behind.
   await expect(page.locator(".pane.active .search-count")).toHaveText("2 of 2");
   await expect(page.locator("#status-page")).toHaveText("Page 10 of 12");
+  await expect(page.locator(".search-hit").first()).toBeAttached();
+  await page.press(".pane.active .search-input", "Enter");
+  await expect(page.locator(".pane.active .search-count")).toHaveText("1 of 2");
+  await expect(page.locator("#status-page")).toHaveText("Page 3 of 12");
 });
 
 test("text layer allows selecting text", async ({ page }) => {

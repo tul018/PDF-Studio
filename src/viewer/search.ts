@@ -1,8 +1,9 @@
+import type { PDFPageProxy } from "pdfjs-dist";
 import type { DocumentStore } from "../core/documents";
 import { WeightedLRU } from "../core/lru";
 import type { PageRef } from "../edit/model";
 
-interface PageText {
+export interface PageText {
   text: string;
   /** For each item: [start offset in text, length, x, y, width, height, a, b] */
   items: Float64Array;
@@ -101,9 +102,12 @@ export class Search {
           from = at + Math.max(1, q.length);
         }
         if (pageHits.length) {
+          // Keep the current hit on the same match while earlier pages' hits
+          // are inserted before it (the search wraps around from startIndex).
+          const current = this.hits[this.currentHit];
           found[i] = pageHits;
           this.hits = found.flat();
-          if (this.currentHit < 0) this.currentHit = this.hits.findIndex((h) => h.pageIndex >= startIndex);
+          this.currentHit = current ? this.hits.indexOf(current) : this.hits.findIndex((h) => h.pageIndex >= startIndex);
         }
       }
       if (performance.now() - lastEmit > 120) {
@@ -130,34 +134,48 @@ export class Search {
     if (cached) return cached;
     const page = await this.store.getPage(ref);
     if (!page) return null;
-    // normalize() below already does NFKC; skip the worker's own pass.
-    const tc = await page.getTextContent({ disableNormalization: true });
-    let text = "";
-    const items: number[] = [];
-    let count = 0;
-    let sep = "";
-    for (const it of tc.items as Array<{ str?: string; transform?: number[]; width?: number; height?: number; hasEOL?: boolean }>) {
-      if (typeof it.str !== "string" || !it.transform) continue;
-      const s = normalize(it.str);
-      if (!s) {
-        if (it.hasEOL) sep = "\n";
-        continue;
-      }
-      // Thai, Chinese and Japanese don't put spaces between words: PDFs often
-      // split such text into many pieces (and lines), and a separator there
-      // would make "你好" or a Thai word unfindable.
-      if (sep && !(NO_SPACE_SCRIPT.test(text.slice(-1)) && NO_SPACE_SCRIPT.test(s[0]))) text += sep;
-      const [a, b, , , e, f] = it.transform;
-      items.push(text.length, s.length, e, f, it.width ?? 0, it.height || Math.hypot(a, b) || 10, a, b);
-      text += s;
-      count++;
-      sep = it.hasEOL ? "\n" : s.endsWith(" ") ? "" : " ";
-    }
-    const pt: PageText = { text, items: new Float64Array(items), count };
-    this.cache.set(key, pt, text.length * 2 + items.length * 8);
+    const pt = await extractPageText(page);
+    this.cache.set(key, pt, pt.text.length * 2 + pt.items.length * 8);
     page.cleanup();
     return pt;
   }
+}
+
+/**
+ * A page's text as one searchable string (plus item positions for
+ * highlighting). Shared by in-document search and folder search, so both
+ * match exactly the same way.
+ */
+export async function extractPageText(page: PDFPageProxy): Promise<PageText> {
+  // normalize() below already does NFKC; skip the worker's own pass.
+  const tc = await page.getTextContent({ disableNormalization: true });
+  let text = "";
+  const items: number[] = [];
+  let count = 0;
+  let sep = "";
+  for (const it of tc.items as Array<{ str?: string; transform?: number[]; width?: number; height?: number; hasEOL?: boolean }>) {
+    if (typeof it.str !== "string" || !it.transform) continue;
+    const s = normalize(it.str);
+    if (!s) {
+      if (it.hasEOL) sep = "\n";
+      continue;
+    }
+    // Thai, Chinese and Japanese don't put spaces between words: PDFs often
+    // split such text into many pieces (and lines), and a separator there
+    // would make "你好" or a Thai word unfindable.
+    if (sep && !(NO_SPACE_SCRIPT.test(text.slice(-1)) && NO_SPACE_SCRIPT.test(s[0]))) text += sep;
+    const [a, b, , , e, f] = it.transform;
+    items.push(text.length, s.length, e, f, it.width ?? 0, it.height || Math.hypot(a, b) || 10, a, b);
+    text += s;
+    count++;
+    sep = it.hasEOL ? "\n" : s.endsWith(" ") ? "" : " ";
+  }
+  return { text, items: new Float64Array(items), count };
+}
+
+/** Query normalized the same way as page text. */
+export function normalizeQuery(q: string, caseSensitive = false): string {
+  return normalize(caseSensitive ? q : q.toLowerCase());
 }
 
 /** Scripts written without spaces between words: Thai, Lao, Khmer, Myanmar, CJK, kana, full-width forms. */

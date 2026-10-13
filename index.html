@@ -47,6 +47,7 @@
         <button class="icon-btn" data-action="mark" data-icon="mark" title="Mark this position (Ctrl+D)" data-needs-doc><span class="lbl">Mark</span></button>
         <button class="icon-btn" data-action="split" data-icon="split" title="Split view: compare two pages (Ctrl+\)" data-needs-doc><span class="lbl">Split</span></button>
         <button class="icon-btn" data-action="search" data-icon="search" title="Find (Ctrl+F)" data-needs-doc></button>
+        <button class="icon-btn hide-sm" data-action="folderSearch" data-icon="folderSearch" title="Search all PDFs in a folder (Ctrl+Shift+F)"></button>
         <button class="icon-btn show-sm" data-action="tools" data-icon="ink" title="Edit tools" data-needs-doc></button>
         <button class="icon-btn" data-action="theme" data-icon="moon" title="Light / dark"></button>
       </div>
@@ -85,6 +86,7 @@
           <button data-tab="pages" class="on" role="tab">Pages</button>
           <button data-tab="outline" role="tab">Outline</button>
           <button data-tab="marks" role="tab">Marks</button>
+          <button data-tab="folder" role="tab" title="Search all PDFs in a folder (Ctrl+Shift+F)">Folder</button>
         </div>
         <div data-panel="pages" class="panel pages-panel">
           <div class="pageops">
@@ -111,6 +113,17 @@
           <ul id="marks-list" class="marks-list"></ul>
           <p id="marks-empty" class="muted empty-note">No marks yet. Press <kbd>M</kbd> or <kbd>Ctrl</kbd>+<kbd>D</kbd> to mark where you are, then click a mark to jump back.</p>
         </div>
+        <div data-panel="folder" class="panel folder-panel" hidden>
+          <button class="btn block" data-folder-act="pick">Choose folder…</button>
+          <div id="folder-name" class="folder-name muted small"></div>
+          <div class="folder-search">
+            <input id="folder-query" type="search" placeholder="Search all PDFs in the folder" aria-label="Search in folder" />
+            <label class="check small" title="Match case"><input id="folder-case" type="checkbox" /> Aa</label>
+          </div>
+          <div id="folder-status" class="muted small folder-status" role="status"></div>
+          <ul id="folder-results" class="folder-results"></ul>
+          <p id="folder-empty" class="muted empty-note">Choose a folder (for example your supplier catalogs), then type a part number, car model or any word. Every PDF in the folder and its subfolders is searched; click a result to open that page.</p>
+        </div>
       </aside>
 
       <section id="panes" class="panes"></section>
@@ -121,6 +134,7 @@
           <p class="muted">Fast, stable viewing and editing — even for huge, image-heavy PDFs.</p>
           <button class="btn primary big" data-action="open">Open PDF…</button>
           <p class="muted small">or drop a file anywhere</p>
+          <button class="btn" data-action="folderSearch">Search a folder of PDFs…</button>
         </div>
       </div>
     </div>

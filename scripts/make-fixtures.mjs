@@ -198,3 +198,23 @@ for (const [name, fn] of [["basic.pdf", basic], ["form.pdf", form], ["heavy-imag
   await fn();
   console.log(`${name} written in ${Date.now() - t} ms`);
 }
+
+// A folder of PDFs for folder search: basic.pdf, a subfolder with languages.pdf,
+// and a scan (an image only, no text).
+const catalogs = join(out, "catalogs");
+if (force || !existsSync(join(catalogs, "scan.pdf"))) {
+  mkdirSync(join(catalogs, "sub"), { recursive: true });
+  writeFileSync(join(catalogs, "basic.pdf"), readFileSync(join(out, "basic.pdf")));
+  writeFileSync(join(catalogs, "sub", "languages.pdf"), readFileSync(join(out, "languages.pdf")));
+  const scan = await PDFDocument.create();
+  const px = new Uint8Array(200 * 100).fill(180);
+  const img = scan.context.register(
+    scan.context.flateStream(px, { Type: "XObject", Subtype: "Image", Width: 200, Height: 100, ColorSpace: "DeviceGray", BitsPerComponent: 8 }),
+  );
+  const page = scan.addPage([612, 792]);
+  page.node.setXObject(PDFName.of("Im"), img);
+  page.pushOperators(pushGraphicsState(), concatTransformationMatrix(400, 0, 0, 200, 100, 400), drawObject("Im"), popGraphicsState());
+  writeFileSync(join(catalogs, "scan.pdf"), await scan.save());
+  writeFileSync(join(catalogs, "notes.txt"), "not a PDF");
+  console.log("catalogs/ written");
+}

@@ -251,6 +251,49 @@ export class DocumentStore {
   }
 }
 
+/**
+ * Open a PDF just to read it (folder search): streamed by byte range like the
+ * viewer, never prompts. A password-protected file fails with an error named
+ * "PasswordException"; an unreadable one fails after a few retries.
+ */
+export async function openForReading(source: PdfSource): Promise<{ pdf: PDFDocumentProxy; close(): Promise<void> }> {
+  const transport = new SourceRangeTransport(source);
+  const task = getDocument({
+    range: transport,
+    length: source.size,
+    rangeChunkSize: 256 * 1024,
+    disableAutoFetch: true,
+    disableStream: true,
+    enableXfa: false,
+    ...pdfjsAssets,
+  } as Parameters<typeof getDocument>[0]);
+  let locked = false;
+  transport.onReadProblem = (err, failures) => {
+    if (err && failures >= 3) {
+      transport.abort();
+      void task.destroy();
+    }
+  };
+  task.onPassword = () => {
+    locked = true;
+    void task.destroy();
+  };
+  try {
+    const pdf = await task.promise;
+    return {
+      pdf,
+      close: async () => {
+        transport.abort();
+        await task.destroy();
+      },
+    };
+  } catch (e) {
+    transport.abort();
+    if (locked) throw Object.assign(new Error("password protected"), { name: "PasswordException" });
+    throw e;
+  }
+}
+
 /** PDF points -> CSS px at 100% zoom (matches Acrobat/Chrome "actual size"). */
 export const CSS_UNITS = 96 / 72;
 

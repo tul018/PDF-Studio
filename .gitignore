@@ -9,3 +9,4 @@ src-tauri/target/
 src-tauri/gen/
 *.log
 bench-results/
+tests/fixtures/catalogs/
