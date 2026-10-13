@@ -615,3 +615,69 @@ export function shrinkDialog(sizeMb: number): Promise<"small" | "balanced" | "hi
     });
   });
 }
+
+// ------------------------------------------------------------------ settings
+
+export interface SettingsValues {
+  language: "en" | "th" | "zh";
+  viewMode: "continuous" | "single" | "spread";
+  night: boolean;
+  readRate: number;
+}
+
+export function settingsDialog(v: SettingsValues): Promise<(SettingsValues & { reset: boolean }) | null> {
+  return new Promise((resolve) => {
+    modal((box, close) => {
+      title(box, "Settings");
+      const language = select(
+        [
+          ["en", "English"],
+          ["th", "ไทย (Thai)"],
+          ["zh", "中文 (Chinese)"],
+        ],
+        v.language,
+      );
+      row(box, "Language", language);
+      const view = select(
+        [
+          ["continuous", "Scroll"],
+          ["single", "One page"],
+          ["spread", "Two pages"],
+        ],
+        v.viewMode,
+      );
+      row(box, "Page layout", view);
+      const night = check(box, "Night reading (dark pages)", v.night);
+      const rate = select(
+        [
+          ["0.8", "0.8×"],
+          ["1", "1×"],
+          ["1.25", "1.25×"],
+          ["1.5", "1.5×"],
+        ],
+        String(v.readRate),
+      );
+      row(box, "Reading speed", rate);
+      let reset = false;
+      const done = (ok: boolean) => {
+        close();
+        resolve(
+          ok
+            ? {
+                language: language.value as SettingsValues["language"],
+                viewMode: view.value as SettingsValues["viewMode"],
+                night: night.checked,
+                readRate: Number(rate.value) || 1,
+                reset,
+              }
+            : null,
+        );
+      };
+      escClose(box, () => done(false));
+      buttons(box, [
+        { label: "Reset remembered choices", onClick: () => ((reset = true), done(true)) },
+        { label: "Close", primary: true, onClick: () => done(true) },
+      ]);
+    });
+  });
+}

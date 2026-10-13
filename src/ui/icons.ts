@@ -53,6 +53,7 @@ const P: Record<string, string> = {
   shrink: "M4 14h6v6 M20 10h-6V4 M14 10l7-7 M3 21l7-7",
   nightPage: "M6 3h9l4 4v14H6z M14 10a3 3 0 1 0 0 6 3.6 3.6 0 0 1 0-6z",
   speaker: "M4 9h4l5-4v14l-5-4H4z M16 9a4 4 0 0 1 0 6 M18.5 6.5a8 8 0 0 1 0 11",
+  gear: "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9 7 7 M17 17l2.1 2.1 M4.9 19.1 7 17 M17 7l2.1-2.1",
   label: "M4 5v14 M7 5v14 M10 5v10 M13 5v14 M17 5v10 M20 5v14 M10 18h1 M17 18h1",
 };
 

@@ -32,7 +32,8 @@ import { renderWatermark } from "./edit/stamps";
 import type { Protection } from "./save/encrypt";
 import { imagesToPdf } from "./save/fromImages";
 import { BytesSource } from "./core/source";
-import { cutDialog, protectDialog, photosDialog, shrinkDialog, exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
+import { currentLanguage, initialLanguage, setLanguage } from "./ui/i18n";
+import { cutDialog, protectDialog, photosDialog, settingsDialog, shrinkDialog, exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
 import { cutPages } from "./edit/cut";
 import { forgetRecent, mapDocIds, newTab, recentFiles, rememberRecent, TabBar, type Tab, type TabSnapshot } from "./tabs";
 import { pagesToImages, shrinkInWorker, splitInWorker } from "./save/pages";
@@ -191,6 +192,8 @@ export class App {
         "info",
         9000,
       );
+    setLanguage(initialLanguage());
+    this.reader.rate = Number(localStorage.getItem("pdfstudio:readrate")) || 1;
     this.tabBar = new TabBar($("#tabbar"));
     this.tabBar.onSelect = (i) => void this.switchTab(i);
     this.tabBar.onClose = (i) => void this.closeTab(i);
@@ -812,6 +815,40 @@ export class App {
     } finally {
       busy.close();
     }
+  }
+
+  async openSettings(): Promise<void> {
+    const viewMode = $<HTMLSelectElement>("#view-mode");
+    const v = await settingsDialog({
+      language: currentLanguage(),
+      viewMode: viewMode.value as ViewMode,
+      night: document.body.classList.contains("night-pages"),
+      readRate: this.reader.rate,
+    });
+    if (!v) return;
+    if (v.reset) {
+      // Remembered choices (dialogs, layout, language...) - not documents, marks or recent files.
+      for (const k of Object.keys(localStorage)) {
+        if (/^pdfstudio:(labels|stamp-dialog|page-numbers|watermark|export-images|split|cut|photos|shrink|folder|viewmode|night|lang|readrate|sidebar|theme)$/.test(k)) localStorage.removeItem(k);
+      }
+      return toast("Remembered choices were reset.", "ok");
+    }
+    const save = (k: string, val: string) => {
+      try {
+        localStorage.setItem(k, val);
+      } catch {
+        /* ignore */
+      }
+    };
+    setLanguage(v.language);
+    save("pdfstudio:lang", v.language);
+    if (viewMode.value !== v.viewMode) {
+      viewMode.value = v.viewMode;
+      viewMode.dispatchEvent(new Event("change"));
+    }
+    if (document.body.classList.contains("night-pages") !== v.night) this.action("nightPages");
+    this.reader.rate = v.readRate;
+    save("pdfstudio:readrate", String(v.readRate));
   }
 
   /** Pick photos/scans and make a new PDF of them (opens in a tab, unsaved). */
@@ -1451,6 +1488,8 @@ export class App {
         return void this.printLabels();
       case "shrink":
         return void this.shrink();
+      case "settings":
+        return void this.openSettings();
       case "readAloud": {
         if (this.reader.playing) return this.reader.stop();
         if (!this.reader.supported) return toast("Read aloud isn't available here.", "error");
