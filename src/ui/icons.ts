@@ -51,6 +51,7 @@ const P: Record<string, string> = {
   lock: "M6 11h12v10H6z M8.5 11V8a3.5 3.5 0 0 1 7 0v3 M12 15v2",
   photos: "M3 7h4l2-3h6l2 3h4v13H3z M12 10a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z",
   shrink: "M4 14h6v6 M20 10h-6V4 M14 10l7-7 M3 21l7-7",
+  nightPage: "M6 3h9l4 4v14H6z M14 10a3 3 0 1 0 0 6 3.6 3.6 0 0 1 0-6z",
   label: "M4 5v14 M7 5v14 M10 5v10 M13 5v14 M17 5v10 M20 5v14 M10 18h1 M17 18h1",
 };
 

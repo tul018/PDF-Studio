@@ -245,6 +245,13 @@ body.split .pane-head { display: flex; }
   color: #b6bcc6; font-size: 28px; font-weight: 300;
 }
 .page.error::after { content: "⚠ This page could not be displayed"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--danger); }
+/* One page at a time: scrolling snaps to page tops. */
+.viewer.snap { scroll-snap-type: y mandatory; }
+.viewer.snap .page { scroll-snap-align: start; scroll-margin-top: 8px; }
+/* Night reading: the pages themselves dark, text light. */
+body.night-pages .page-canvas, body.night-pages .page-detail { filter: invert(1) hue-rotate(180deg); }
+body.night-pages .page { background: #111; }
+#view-mode { width: auto; }
 .page-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .page-detail { position: absolute; display: block; }
 .page-layers { position: absolute; inset: 0; z-index: 3; pointer-events: none; }

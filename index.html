@@ -30,6 +30,11 @@
         <button class="icon-btn" data-action="next" data-icon="next" title="Next page" data-needs-doc></button>
         <span class="sep hide-sm"></span>
         <button class="icon-btn hide-sm" data-action="zoomOut" data-icon="zoomOut" title="Zoom out (Ctrl+-)" data-needs-doc></button>
+        <select id="view-mode" aria-label="Page layout" title="Page layout" data-needs-doc>
+          <option value="continuous">Scroll</option>
+          <option value="single">One page</option>
+          <option value="spread">Two pages</option>
+        </select>
         <select id="zoom-select" aria-label="Zoom" data-needs-doc>
           <option data-custom value="1">100%</option>
           <option value="width">Fit width</option>
@@ -52,6 +57,7 @@
         <button class="icon-btn hide-sm" data-action="fromPhotos" data-icon="photos" title="Make a PDF from photos or scans"></button>
         <button class="icon-btn hide-sm" data-action="folderSearch" data-icon="folderSearch" title="Search all PDFs in a folder (Ctrl+Shift+F)"></button>
         <button class="icon-btn show-sm" data-action="tools" data-icon="ink" title="Edit tools" data-needs-doc></button>
+        <button class="icon-btn" data-action="nightPages" data-icon="nightPage" title="Night reading: dark pages, light text" data-needs-doc></button>
         <button class="icon-btn" data-action="theme" data-icon="moon" title="Light / dark"></button>
       </div>
     </header>

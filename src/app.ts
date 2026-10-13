@@ -50,7 +50,7 @@ import { attachGestures } from "./viewer/gestures";
 import { FolderPanel } from "./viewer/folderPanel";
 import { newTextCache, Search } from "./viewer/search";
 import { Thumbnails } from "./viewer/thumbnails";
-import { Viewer, type Decorator, type Slot } from "./viewer/viewer";
+import { Viewer, type Decorator, type Slot, type ViewMode } from "./viewer/viewer";
 
 interface Pane {
   root: HTMLDivElement;
@@ -157,6 +157,22 @@ export class App {
       );
     };
 
+    // Page layout (scroll / one page / two pages) and night reading, remembered.
+    const viewMode = $<HTMLSelectElement>("#view-mode");
+    viewMode.value = localStorage.getItem("pdfstudio:viewmode") ?? "continuous";
+    if (viewMode.value !== "continuous") for (const p of this.panes) p.viewer.setViewMode(viewMode.value as ViewMode);
+    viewMode.addEventListener("change", () => {
+      for (const p of this.panes) p.viewer.setViewMode(viewMode.value as ViewMode);
+      try {
+        localStorage.setItem("pdfstudio:viewmode", viewMode.value);
+      } catch {
+        /* ignore */
+      }
+    });
+    if (localStorage.getItem("pdfstudio:night") === "1") {
+      document.body.classList.add("night-pages");
+      $('[data-action="nightPages"]').classList.add("on");
+    }
     this.tabBar = new TabBar($("#tabbar"));
     this.tabBar.onSelect = (i) => void this.switchTab(i);
     this.tabBar.onClose = (i) => void this.closeTab(i);
@@ -236,6 +252,8 @@ export class App {
     $("#panes").appendChild(root);
 
     const viewer = new Viewer(scroller, this.store, this.profile);
+    const mode = document.querySelector<HTMLSelectElement>("#view-mode")?.value as ViewMode | undefined;
+    if (mode && mode !== "continuous") viewer.setViewMode(mode);
     const search = new Search(this.store, this.textCache);
     const bar = this.createSearchBar();
     root.appendChild(bar);
@@ -1414,6 +1432,16 @@ export class App {
         return void this.printLabels();
       case "shrink":
         return void this.shrink();
+      case "nightPages": {
+        const on = document.body.classList.toggle("night-pages");
+        $('[data-action="nightPages"]').classList.toggle("on", on);
+        try {
+          localStorage.setItem("pdfstudio:night", on ? "1" : "0");
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
       case "fromPhotos":
         return void this.pdfFromPhotos();
       case "protect":

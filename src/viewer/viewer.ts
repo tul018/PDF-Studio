@@ -1,7 +1,7 @@
 import { AnnotationMode, TextLayer, type PDFPageProxy } from "pdfjs-dist";
 import { cropViewport, CSS_UNITS, type DocumentStore } from "../core/documents";
 import { degradeProfile, type DeviceProfile } from "../core/deviceProfile";
-import { clampRenderScale, clampZoom, PageLayout } from "../core/layout";
+import { clampRenderScale, clampZoom, PAGE_GAP, PageLayout } from "../core/layout";
 import { isAbort, RenderQueue } from "../core/renderQueue";
 import { makeView, type View } from "../core/viewport";
 import type { PageRef } from "../edit/model";
@@ -33,6 +33,8 @@ export interface Decorator {
 }
 
 export type FitMode = "none" | "width" | "page";
+/** Continuous scrolling, one page at a time (snaps), or two pages side by side (book). */
+export type ViewMode = "continuous" | "single" | "spread";
 
 const SIDE_PAD = 16;
 
@@ -291,10 +293,12 @@ export class Viewer {
 
   private applyFit(): void {
     if (!this.pages.length || this.fit === "none") return;
-    const s = this.layout.baseSize(Math.min(this.current, this.pages.length - 1));
+    const cur = Math.min(this.current, this.pages.length - 1);
+    const s = this.layout.baseSize(cur);
     const availW = this.scroller.clientWidth - SIDE_PAD * 2;
     const availH = this.scroller.clientHeight - 24;
-    let z = availW / s.width;
+    // Two pages side by side: fit the pair.
+    let z = availW / (this.layout.columns === 2 ? this.layout.rowBaseWidth(cur) : s.width);
     if (this.fit === "page") z = Math.min(z, availH / s.height);
     const mode = this.fit;
     this.setZoom(z, undefined, mode);
@@ -355,7 +359,29 @@ export class Viewer {
   /** Content-space x of a page's left edge. */
   pageLeft(i: number): number {
     const contentW = this.contentWidth();
-    return Math.max(SIDE_PAD, (contentW - this.layout.size(i).width) / 2);
+    if (this.layout.columns === 1) return Math.max(SIDE_PAD, (contentW - this.layout.size(i).width) / 2);
+    const [a, b] = this.layout.row(i);
+    let rowW = (b - a) * PAGE_GAP;
+    for (let k = a; k <= b; k++) rowW += this.layout.size(k).width;
+    let x = Math.max(SIDE_PAD, (contentW - rowW) / 2);
+    for (let k = a; k < i; k++) x += this.layout.size(k).width + PAGE_GAP;
+    return x;
+  }
+
+  get viewMode(): ViewMode {
+    return this.layout.columns === 2 ? "spread" : this.scroller.classList.contains("snap") ? "single" : "continuous";
+  }
+
+  setViewMode(mode: ViewMode): void {
+    const anchor = this.pages[this.current]?.id;
+    this.layout.setColumns(mode === "spread" ? 2 : 1);
+    this.scroller.classList.toggle("snap", mode === "single");
+    this.applyLayoutSize();
+    for (const s of this.slots.values()) this.positionSlot(s);
+    if (this.fit !== "none") this.applyFit();
+    const i = anchor ? this.pages.findIndex((p) => p.id === anchor) : -1;
+    if (i >= 0) this.scrollToPage(i);
+    this.requestUpdate();
   }
 
   private contentWidth(): number {

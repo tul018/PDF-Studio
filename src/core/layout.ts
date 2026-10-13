@@ -14,9 +14,17 @@ export const PAGE_MARGIN_TOP = 12;
 export class PageLayout {
   /** Unscaled (zoom = 1, CSS px) page sizes, rotation already applied. */
   private sizes: Size[] = [];
+  /** Top of each row (pages side by side share a row), plus the end. */
   private offsets: Float64Array = new Float64Array(0);
+  /** Row of each page, and the first page of each row. */
+  private rowOf: Uint32Array = new Uint32Array(0);
+  private rowStart: Uint32Array = new Uint32Array(0);
   private dirty = true;
   zoom = 1;
+  /** 1 = continuous column; 2 = two pages side by side (book). */
+  columns: 1 | 2 = 1;
+  /** In two-page mode the first page (a cover) sits alone, like a book. */
+  coverAlone = true;
 
   setSizes(sizes: Size[]): void {
     this.sizes = sizes.slice();
@@ -40,6 +48,14 @@ export class PageLayout {
     }
   }
 
+  setColumns(columns: 1 | 2, coverAlone = true): void {
+    if (columns !== this.columns || coverAlone !== this.coverAlone) {
+      this.columns = columns;
+      this.coverAlone = coverAlone;
+      this.dirty = true;
+    }
+  }
+
   get count(): number {
     return this.sizes.length;
   }
@@ -57,46 +73,83 @@ export class PageLayout {
   private ensure(): void {
     if (!this.dirty) return;
     const n = this.sizes.length;
-    const off = new Float64Array(n + 1);
-    let y = PAGE_MARGIN_TOP;
-    for (let i = 0; i < n; i++) {
-      off[i] = y;
-      y += Math.round(this.sizes[i].height * this.zoom) + PAGE_GAP;
+    const rowOf = new Uint32Array(n);
+    const starts: number[] = [];
+    for (let i = 0; i < n; ) {
+      starts.push(i);
+      const pair = this.columns === 2 && !(this.coverAlone && i === 0) && i + 1 < n;
+      rowOf[i] = starts.length - 1;
+      if (pair) rowOf[i + 1] = starts.length - 1;
+      i += pair ? 2 : 1;
     }
-    off[n] = y;
+    const rows = starts.length;
+    const off = new Float64Array(rows + 1);
+    let y = PAGE_MARGIN_TOP;
+    for (let r = 0; r < rows; r++) {
+      off[r] = y;
+      const a = starts[r],
+        b = r + 1 < rows ? starts[r + 1] : n;
+      let h = 0;
+      for (let i = a; i < b; i++) h = Math.max(h, Math.round(this.sizes[i].height * this.zoom));
+      y += h + PAGE_GAP;
+    }
+    off[rows] = y;
     this.offsets = off;
+    this.rowOf = rowOf;
+    this.rowStart = Uint32Array.from([...starts, n]);
     this.dirty = false;
   }
 
   top(i: number): number {
     this.ensure();
-    return this.offsets[i];
+    return this.offsets[this.rowOf[i]];
   }
 
   totalHeight(): number {
     this.ensure();
-    return this.offsets[this.sizes.length] ?? 0;
+    return this.offsets[this.offsets.length - 1] ?? 0;
+  }
+
+  /** Pages in the same row as page i: [first, last]. */
+  row(i: number): [number, number] {
+    this.ensure();
+    const r = this.rowOf[i];
+    return [this.rowStart[r], this.rowStart[r + 1] - 1];
+  }
+
+  /** Unscaled width of a row (pages side by side, with the gap between them at zoom 1). */
+  rowBaseWidth(i: number): number {
+    const [a, b] = this.row(i);
+    let w = 0;
+    for (let k = a; k <= b; k++) w += this.sizes[k].width;
+    return w + (b - a) * PAGE_GAP;
   }
 
   maxWidth(): number {
+    this.ensure();
     let w = 0;
-    for (const s of this.sizes) if (s.width > w) w = s.width;
-    return Math.round(w * this.zoom);
+    for (let r = 0; r + 1 < this.rowStart.length; r++) {
+      let rw = 0;
+      for (let i = this.rowStart[r]; i < this.rowStart[r + 1]; i++) rw += Math.round(this.sizes[i].width * this.zoom);
+      rw += (this.rowStart[r + 1] - this.rowStart[r] - 1) * PAGE_GAP;
+      if (rw > w) w = rw;
+    }
+    return w;
   }
 
-  /** Index of the page containing y (binary search). */
+  /** Index of the (first) page of the row containing y (binary search). */
   indexAt(y: number): number {
     this.ensure();
     const n = this.sizes.length;
     if (n === 0) return -1;
     let lo = 0;
-    let hi = n - 1;
+    let hi = this.rowStart.length - 2;
     while (lo < hi) {
       const mid = (lo + hi + 1) >> 1;
       if (this.offsets[mid] <= y) lo = mid;
       else hi = mid - 1;
     }
-    return lo;
+    return this.rowStart[lo];
   }
 
   /** Inclusive range of pages intersecting [top, bottom]. */
@@ -104,7 +157,7 @@ export class PageLayout {
     const n = this.sizes.length;
     if (n === 0) return [0, -1];
     const first = this.indexAt(top);
-    let last = this.indexAt(bottom);
+    let last = this.row(this.indexAt(bottom))[1];
     if (last < first) last = first;
     return [first, Math.min(n - 1, last)];
   }
