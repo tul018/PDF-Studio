@@ -55,6 +55,7 @@ export class Viewer {
   readonly queue: RenderQueue;
   private pagesEl: HTMLDivElement;
   private pages: readonly PageRef[] = [];
+  private positions: Map<string, number[]> | null = null;
   private slots = new Map<string, Slot>();
   private decorators: Decorator[] = [];
   private zoomValue = 1;
@@ -67,11 +68,28 @@ export class Viewer {
   private cleanupTimer = 0;
   private dpr = 1;
   private share = 1;
+  /** Smoothed scroll speed (px/ms), to skip rendering pages that are flying by. */
+  private speed = 0;
+  private lastScrollY = 0;
+  private lastScrollT = 0;
+  private flingTimer = 0;
+  /** Typical time to draw one page on this device (moving average, ms). */
+  private renderMs = 100;
+  /** The last update skipped rendering because of a fling. */
+  private skipped = false;
+  private skipMode = false;
+  /** Smoothed frame time while scrolling (ms): > 16.7 means frames are being dropped. */
+  private frameMs = 16;
+  private lastFrameT = 0;
+  /** Small cached bitmap of a page (its thumbnail), shown stretched until the page renders. */
+  placeholderFor: (ref: PageRef) => HTMLCanvasElement | undefined = () => undefined;
   private resizeObs: ResizeObserver;
   private offSize: () => void;
   onPageChange: (index: number) => void = () => {};
   onZoomChange: (zoom: number) => void = () => {};
   onRenderError: (msg: string) => void = () => {};
+  /** A page bitmap was drawn or released (memory status, thumbnails). */
+  onCanvasChange: () => void = () => {};
 
   constructor(
     readonly scroller: HTMLElement,
@@ -84,7 +102,7 @@ export class Viewer {
     scroller.appendChild(this.pagesEl);
     this.updateDpr();
 
-    scroller.addEventListener("scroll", () => this.requestUpdate(), { passive: true });
+    scroller.addEventListener("scroll", () => this.onScroll(), { passive: true });
     let lastW = -1,
       lastH = -1;
     this.resizeObs = new ResizeObserver(() => {
@@ -106,7 +124,7 @@ export class Viewer {
       this.updateDpr();
       this.invalidateAll();
     });
-    this.offSize = store.onSize((docId, index) => this.onMetaLoaded(docId, index));
+    this.offSize = store.onSize((docId, indices) => this.onMetaLoaded(docId, indices));
   }
 
   private updateDpr(): void {
@@ -138,6 +156,18 @@ export class Viewer {
     return this.slots.get(pageId);
   }
 
+  /** The page's current bitmap, if it has been properly rendered (not a placeholder). */
+  renderedCanvas(ref: PageRef): HTMLCanvasElement | undefined {
+    const s = this.slots.get(ref.id);
+    return s && s.ref === ref && s.canvasZoom > 0 && s.canvas ? s.canvas : undefined;
+  }
+
+  /** Mounted here and waiting to be drawn. */
+  willDraw(ref: PageRef): boolean {
+    const s = this.slots.get(ref.id);
+    return !!s && s.ref === ref && s.canvasZoom === 0 && !s.failed;
+  }
+
   mountedSlots(): Slot[] {
     return [...this.slots.values()];
   }
@@ -155,6 +185,7 @@ export class Viewer {
     const anchor = keepPosition ? this.captureAnchor() : null;
     const prevCurrentId = this.pages[this.current]?.id;
     this.pages = pages;
+    this.positions = null;
     this.layout.setSizes(pages.map((p) => this.store.displaySize(p)));
     const byId = new Map(pages.map((p, i) => [p.id, i] as const));
     for (const [id, slot] of [...this.slots]) {
@@ -178,13 +209,32 @@ export class Viewer {
     this.requestUpdate();
   }
 
-  private onMetaLoaded(docId: string, index: number): void {
+  /** Where each source page is shown: "docId:srcIndex" -> positions (rebuilt on setPages). */
+  private positionsOf(): Map<string, number[]> {
+    if (!this.positions) {
+      this.positions = new Map();
+      this.pages.forEach((p, i) => {
+        if (!p.docId) return;
+        const key = `${p.docId}:${p.srcIndex}`;
+        const list = this.positions!.get(key);
+        if (list) list.push(i);
+        else this.positions!.set(key, [i]);
+      });
+    }
+    return this.positions;
+  }
+
+  private onMetaLoaded(docId: string, indices: readonly number[]): void {
     let changed = false;
-    for (let i = 0; i < this.pages.length; i++) {
-      const p = this.pages[i];
-      if (p.docId === docId && (p.srcIndex === index || index === 0)) {
-        if (this.layout.setSize(i, this.store.displaySize(p))) changed = true;
-      }
+    const update = (i: number) => {
+      if (this.layout.setSize(i, this.store.displaySize(this.pages[i]))) changed = true;
+    };
+    if (indices.includes(0)) {
+      // Page 1 is the size estimate for every page not measured yet.
+      this.pages.forEach((p, i) => p.docId === docId && update(i));
+    } else {
+      const where = this.positionsOf();
+      for (const index of indices) for (const i of where.get(`${docId}:${index}`) ?? []) update(i);
     }
     if (!changed) return;
     const anchor = this.captureAnchor();
@@ -221,9 +271,15 @@ export class Viewer {
       for (const d of this.decorators) d.decorate(s);
     }
     this.onZoomChange(z);
+    clearTimeout(this.zoomRenderTimer);
+    if (![...this.slots.values()].some((s) => s.canvas)) {
+      // Nothing on screen to stretch (e.g. fit-width right after opening):
+      // waiting would only delay the first page.
+      this.requestUpdate();
+      return;
+    }
     // Re-render only after the gesture settles; until then the existing
     // bitmaps are CSS-scaled (cheap, smooth).
-    clearTimeout(this.zoomRenderTimer);
     this.zoomRenderTimer = window.setTimeout(() => this.requestUpdate(), 160);
     this.requestUpdate(false);
   }
@@ -339,6 +395,39 @@ export class Viewer {
 
   // ------------------------------------------------------------ update loop
 
+  private onScroll(): void {
+    const now = performance.now();
+    const y = this.scroller.scrollTop;
+    const dt = now - this.lastScrollT;
+    this.speed = dt > 0 && dt < 200 ? 0.6 * this.speed + (0.4 * Math.abs(y - this.lastScrollY)) / dt : 0;
+    this.lastScrollY = y;
+    this.lastScrollT = now;
+    clearTimeout(this.flingTimer);
+    this.flingTimer = window.setTimeout(() => {
+      this.speed = 0;
+      this.skipMode = false;
+      this.frameMs = 16;
+      if (this.skipped) this.requestUpdate();
+    }, 90);
+    this.requestUpdate();
+  }
+
+  /**
+   * Pages fly by faster than this device can draw them AND drawing them is
+   * dropping frames: then stop starting renders until the fling ends - they
+   * would only burn CPU, stutter the scroll and delay the page you land on.
+   * On a fast machine frames stay smooth, so every page is still drawn.
+   * Once on, it stays on for the rest of the fling (no flip-flopping).
+   */
+  private get flinging(): boolean {
+    if (this.skipMode) return true;
+    if (this.speed <= 0 || !this.pages.length) return false;
+    const pageH = this.layout.size(Math.min(this.current, this.pages.length - 1)).height;
+    const onScreenMs = (this.scroller.clientHeight + pageH) / this.speed;
+    if (onScreenMs < this.renderMs * 4 && this.frameMs > 25) this.skipMode = true;
+    return this.skipMode;
+  }
+
   requestUpdate(render = true): void {
     if (this.rafPending) return;
     this.rafPending = true;
@@ -351,6 +440,9 @@ export class Viewer {
   private update(render: boolean): void {
     const n = this.pages.length;
     if (!n) return;
+    const now = performance.now();
+    if (this.speed > 0 && now - this.lastFrameT < 200) this.frameMs = 0.8 * this.frameMs + 0.2 * (now - this.lastFrameT);
+    this.lastFrameT = now;
     const top = this.scroller.scrollTop;
     const bottom = top + this.scroller.clientHeight;
     const [first, last] = this.layout.visibleRange(top, bottom);
@@ -375,7 +467,8 @@ export class Viewer {
       return this.slots.has(id);
     });
 
-    if (!render) return;
+    this.skipped = render && this.flinging;
+    if (!render || this.skipped) return;
     const center = (top + bottom) / 2;
     const perPageCap = Math.min(
       this.profile.maxCanvasPixels,
@@ -443,6 +536,19 @@ export class Viewer {
       textZoom: 0,
       failed: false,
     };
+    const thumb = ref.docId ? this.placeholderFor(ref) : undefined;
+    if (thumb) {
+      // A copy of the thumbnail (~200 px wide), stretched: a blurry page now
+      // beats a blank one. The real render replaces it like any old bitmap.
+      const ph = document.createElement("canvas");
+      ph.className = "page-canvas";
+      ph.width = thumb.width;
+      ph.height = thumb.height;
+      ph.getContext("2d")?.drawImage(thumb, 0, 0);
+      el.insertBefore(ph, el.firstChild);
+      slot.canvas = ph;
+      slot.canvasPixels = ph.width * ph.height;
+    }
     this.slots.set(ref.id, slot);
     this.positionSlot(slot);
     this.pagesEl.appendChild(el);
@@ -482,6 +588,7 @@ export class Viewer {
     }).catch(() => {});
     this.unmountedSinceCleanup++;
     this.scheduleDocCleanup();
+    this.onCanvasChange();
   }
 
   /**
@@ -547,7 +654,9 @@ export class Viewer {
     const base = page.getViewport({ scale: 1, rotation });
     const desired = zoom * CSS_UNITS * this.dpr;
     let { scale, clamped } = clampRenderScale(base.width, base.height, desired, pixelCap);
+    const t0 = performance.now();
     const ok = await this.paint(slot, page, scale, rotation, signal);
+    if (ok === "ok") this.renderMs = 0.7 * this.renderMs + 0.3 * (performance.now() - t0);
     if (ok === "oom") {
       // Canvas allocation failed: shrink budgets and retry once smaller.
       degradeProfile(this.profile);
@@ -564,6 +673,7 @@ export class Viewer {
     slot.canvasZoom = zoom;
     slot.canvasClamped = clamped;
     slot.el.classList.remove("loading");
+    this.onCanvasChange();
     // Zoom may have changed meanwhile; also lets text layers/details settle.
     this.requestUpdate();
   }

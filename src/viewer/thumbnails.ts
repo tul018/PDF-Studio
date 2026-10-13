@@ -36,6 +36,19 @@ export class Thumbnails {
   onNavigate: (index: number) => void = () => {};
   onSelectionChange: (ids: Set<string>) => void = () => {};
   onMove: (ids: Set<string>, toIndex: number) => void = () => {};
+  /** The page as already drawn in the main view, if it is (see render). */
+  renderedPage: (ref: PageRef) => HTMLCanvasElement | undefined = () => undefined;
+  /** The main view is about to draw this page: wait and copy it (call refresh() then). */
+  mainWillDraw: (ref: PageRef) => boolean = () => false;
+
+  refresh(): void {
+    this.request();
+  }
+
+  /** Cached thumbnail of a page, if there is one (placeholder for the main view). */
+  cached(ref: PageRef): HTMLCanvasElement | undefined {
+    return this.cache.peek(this.cacheKey(ref));
+  }
 
   constructor(
     private scroller: HTMLElement,
@@ -132,7 +145,7 @@ export class Thumbnails {
       if (!it.frame.querySelector("canvas")) {
         const cached = this.cache.get(key);
         if (cached) it.frame.appendChild(cached);
-        else if (ref.docId) {
+        else if (ref.docId && !this.mainWillDraw(ref)) {
           this.queue.schedule({
             key: `thumb:${ref.id}`,
             priority: 1e7 + Math.abs(i - first),
@@ -239,7 +252,31 @@ export class Thumbnails {
     for (const it of this.items.values()) it.el.classList.toggle("selected", this.selected.has(it.ref.id));
   }
 
+  private keep(it: Item, canvas: HTMLCanvasElement): void {
+    const key = this.cacheKey(it.ref);
+    this.cache.set(key, canvas, canvas.width * canvas.height, (k) => {
+      const id = k.slice(0, k.lastIndexOf(":"));
+      return this.items.has(id);
+    });
+    if (this.items.get(it.ref.id) === it && !it.frame.querySelector("canvas")) it.frame.appendChild(canvas);
+  }
+
   private async render(it: Item, signal: AbortSignal): Promise<void> {
+    // The main view usually has this page drawn already: shrinking that
+    // bitmap costs ~nothing, while rendering again means re-parsing the page
+    // and re-decoding its images (for a photo page as much work as the page).
+    const drawn = this.renderedPage(it.ref);
+    if (drawn && drawn.width > 0) {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(THUMB_W * this.dpr);
+      canvas.height = Math.max(1, Math.round((canvas.width * drawn.height) / drawn.width));
+      const ctx = canvas.getContext("2d", { alpha: false });
+      if (ctx) {
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(drawn, 0, 0, canvas.width, canvas.height);
+        return this.keep(it, canvas);
+      }
+    }
     const pageP = this.store.getPage(it.ref);
     if (!pageP) return;
     const page: PDFPageProxy = await pageP;
@@ -270,11 +307,6 @@ export class Thumbnails {
     } finally {
       signal.removeEventListener("abort", onAbort);
     }
-    const key = this.cacheKey(it.ref);
-    this.cache.set(key, canvas, canvas.width * canvas.height, (k) => {
-      const id = k.slice(0, k.lastIndexOf(":"));
-      return this.items.has(id);
-    });
-    if (this.items.get(it.ref.id) === it && !it.frame.querySelector("canvas")) it.frame.appendChild(canvas);
+    this.keep(it, canvas);
   }
 }

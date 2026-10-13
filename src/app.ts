@@ -1,7 +1,7 @@
 import { CSS_UNITS, DocumentStore, type LoadedDoc } from "./core/documents";
 import { getProfile, type DeviceProfile } from "./core/deviceProfile";
 import { nextZoom } from "./core/layout";
-import { FileSource, type PdfSource } from "./core/source";
+import { FileSource, fileKeyOf, fileVersionOf, type PdfSource } from "./core/source";
 import { History } from "./edit/history";
 import { Marks } from "./edit/marks";
 import {
@@ -25,7 +25,7 @@ import { icon } from "./ui/icons";
 import { printPdf } from "./ui/print";
 import { FormLinkLayer } from "./viewer/formLayer";
 import { attachGestures } from "./viewer/gestures";
-import { Search } from "./viewer/search";
+import { newTextCache, Search } from "./viewer/search";
 import { Thumbnails } from "./viewer/thumbnails";
 import { Viewer, type Decorator, type Slot } from "./viewer/viewer";
 
@@ -36,6 +36,10 @@ interface Pane {
   viewer: Viewer;
   overlay: AnnotationOverlay;
   forms: FormLinkLayer;
+  /** Each pane searches on its own (split view: different queries side by side). */
+  search: Search;
+  bar: HTMLDivElement;
+  searchTimer: number;
 }
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) =>
@@ -70,9 +74,12 @@ export class App {
   readonly history = new History(emptyState());
   readonly images = new Map<string, StoredImage>();
   readonly marks = new Marks();
-  readonly search = new Search(this.store);
+  /** Page text extracted for search, shared by the panes' searches. */
+  private readonly textCache = newTextCache();
   mainDoc: LoadedDoc | null = null;
   private fileKey = "";
+  private fileVersion = "";
+  private canvasChangePending = false;
   private panes: Pane[] = [];
   private active = 0;
   private thumbs!: Thumbnails;
@@ -97,19 +104,34 @@ export class App {
     this.thumbs.onNavigate = (i) => this.activeViewer.scrollToPage(i);
     this.thumbs.onMove = (ids, to) => this.history.push(movePages(this.history.state, ids, to));
     this.thumbs.onSelectionChange = () => this.updatePageOpsState();
+    // Thumbnails are copied from pages the main view has drawn, not rendered twice.
+    this.thumbs.renderedPage = (ref) => {
+      for (const p of this.panes) {
+        const c = p.viewer.renderedCanvas(ref);
+        if (c) return c;
+      }
+      return undefined;
+    };
+    this.thumbs.mainWillDraw = (ref) => this.panes.some((p) => p.viewer.willDraw(ref));
 
     this.history.subscribe((s) => this.onState(s));
     this.marks.onChange = () => {
       this.renderMarks();
       for (const p of this.panes) p.viewer.redecorate();
     };
-    this.search.onUpdate = (done, scanned, total) => this.onSearchUpdate(done, scanned, total);
+    this.store.onReadProblem = (source, err) => {
+      if (err === null) return toast(`"${source.name}" can be read again.`, "ok");
+      toast(
+        `Can't read "${source.name}" right now (${(err as Error)?.message ?? err}). Retrying — pages will appear once the file is available (e.g. OneDrive finished downloading, drive reconnected).`,
+        "error",
+        15_000,
+      );
+    };
 
     this.bindToolbar();
     this.bindKeyboard();
     this.bindDragDrop();
     this.bindSidebarTabs();
-    setInterval(() => this.updateMemoryStatus(), 1000);
     // Live diagnostics for automated tests and support.
     const app = this;
     (window as unknown as { __pdfstudio: unknown }).__pdfstudio = {
@@ -179,13 +201,18 @@ export class App {
     $("#panes").appendChild(root);
 
     const viewer = new Viewer(scroller, this.store, this.profile);
-    const overlay = new AnnotationOverlay(viewer, this.history, this.images, this.search);
+    const search = new Search(this.store, this.textCache);
+    const bar = this.createSearchBar();
+    root.appendChild(bar);
+    const overlay = new AnnotationOverlay(viewer, this.history, this.images, search);
     const forms = new FormLinkLayer(this.store, this.history);
     viewer.addDecorator(overlay);
     viewer.addDecorator(forms);
     viewer.addDecorator(this.ribbons);
     attachGestures(viewer);
-    const pane: Pane = { root, head, scroller, viewer, overlay, forms };
+    const pane: Pane = { root, head, scroller, viewer, overlay, forms, search, bar, searchTimer: 0 };
+    search.onUpdate = (done, scanned, total) => this.onSearchUpdate(pane, done, scanned, total);
+    this.bindSearchBar(pane);
 
     overlay.onRequestNoteText = (initial) =>
       promptText(initial ? "Edit comment" : "Add comment", initial, { multiline: true, placeholder: "Comment…" });
@@ -205,6 +232,8 @@ export class App {
     };
     viewer.onZoomChange = () => this.updatePageIndicators();
     viewer.onRenderError = (m) => toast(m, "error");
+    viewer.onCanvasChange = () => this.onCanvasChange();
+    viewer.placeholderFor = (ref) => this.thumbs?.cached(ref);
 
     root.addEventListener("pointerdown", () => this.activate(pane), { capture: true });
     root.addEventListener("focusin", () => this.activate(pane));
@@ -264,6 +293,8 @@ export class App {
 
   private closePane(p: Pane): void {
     if (this.panes.length < 2) return;
+    p.search.clear();
+    clearTimeout(p.searchTimer);
     p.viewer.destroy();
     p.root.remove();
     this.panes = this.panes.filter((x) => x !== p);
@@ -316,14 +347,15 @@ export class App {
       if (mode === "replace" || !this.mainDoc) {
         const [main, ...rest] = loaded;
         this.mainDoc = main;
-        this.fileKey = `${main.source.name}:${main.source.size}`;
+        this.fileKey = fileKeyOf(main.source);
+        this.fileVersion = fileVersionOf(main.source);
         let pages = pagesForDoc(main.id, main.numPages);
         for (const d of rest) pages = pages.concat(pagesForDoc(d.id, d.numPages));
         this.lastPages = null;
         for (const p of this.panes) p.forms.reset();
         this.history.reset({ ...emptyState(), pages });
         if (main.numPages <= 20000) this.store.scanSizes(main.id);
-        this.marks.load(this.fileKey);
+        this.marks.load(this.fileKey, `${main.source.name}:${main.source.size}`);
         this.renderOutline();
         document.title = `${main.source.name} — PDF Studio`;
         requestAnimationFrame(() => {
@@ -356,9 +388,11 @@ export class App {
   }
 
   private async closeDocument(): Promise<void> {
-    this.search.clear();
-    this.search.invalidate();
-    $("#search-count").textContent = "";
+    for (const p of this.panes) {
+      p.search.clear();
+      $(".search-count", p.bar).textContent = "";
+    }
+    this.textCache.clear();
     for (const p of this.panes) {
       p.overlay.select(null);
       p.viewer.setPages([], false);
@@ -376,7 +410,7 @@ export class App {
 
   private async offerRecovery(): Promise<void> {
     if (!this.mainDoc) return;
-    const draft = await loadDraft(this.fileKey, this.mainDoc.id);
+    const draft = await loadDraft(this.fileKey, this.fileVersion, this.mainDoc.id);
     if (!draft || (!draft.state.annotations.length && !Object.keys(draft.state.formValues).length && draft.state.pages.length === this.mainDoc.numPages && draft.state.pages.every((p, i) => p.srcIndex === i && !p.rotation))) return;
     const when = new Date(draft.savedAt).toLocaleString();
     const ok = await confirmDialog(
@@ -419,7 +453,7 @@ export class App {
   private writeDraftNow(): void {
     clearTimeout(this.draftTimer);
     if (this.mainDoc && this.history.dirty) {
-      void saveDraft(this.fileKey, this.mainDoc.id, this.history.state, this.images);
+      void saveDraft(this.fileKey, this.fileVersion, this.mainDoc.id, this.history.state, this.images);
     }
   }
 
@@ -455,6 +489,13 @@ export class App {
         // The source file changed on disk: reopen it (edits are now part of it).
         const pos = this.activeViewer.position();
         const zoom = this.activeViewer.zoom;
+        // Page numbers changed if pages were moved or deleted: carry the marks along.
+        const mainId = this.mainDoc.id;
+        const newIndex = new Map<number, number>();
+        this.history.state.pages.forEach((p, i) => {
+          if (p.docId === mainId && !newIndex.has(p.srcIndex)) newIndex.set(p.srcIndex, i);
+        });
+        this.marks.remap((srcIndex) => newIndex.get(srcIndex));
         this.history.markSaved();
         await this.closeDocument();
         await this.openSources([await NativeSource.open(res.path)]);
@@ -756,57 +797,87 @@ export class App {
 
   // ================================================================ search
 
-  private searchTimer = 0;
+  private createSearchBar(): HTMLDivElement {
+    const bar = document.createElement("div");
+    bar.className = "searchbar";
+    bar.hidden = true;
+    bar.innerHTML = `
+      <input class="search-input" type="search" placeholder="Find in document" aria-label="Find" />
+      <label class="check small" title="Match case"><input class="search-case" type="checkbox" /> Aa</label>
+      <span class="search-count muted small"></span>
+      <button class="icon-btn small" data-search-act="prev" title="Previous (Shift+Enter)">${icon("up")}</button>
+      <button class="icon-btn small" data-search-act="next" title="Next (Enter)">${icon("down")}</button>
+      <button class="icon-btn small" data-search-act="close" title="Close">${icon("close")}</button>`;
+    return bar;
+  }
 
-  openSearch(): void {
-    const bar = $("#searchbar");
-    bar.hidden = false;
-    const input = $<HTMLInputElement>("#search-input");
+  private bindSearchBar(p: Pane): void {
+    const input = $<HTMLInputElement>(".search-input", p.bar);
+    input.addEventListener("input", () => this.runSearch(p));
+    input.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") this.stepSearch(p, e.shiftKey ? -1 : 1);
+      if (e.key === "Escape") this.closeSearch(p);
+    });
+    $<HTMLInputElement>(".search-case", p.bar).addEventListener("change", () => this.runSearch(p));
+    p.bar.addEventListener("click", (e) => {
+      const act = (e.target as Element).closest<HTMLElement>("[data-search-act]")?.dataset.searchAct;
+      if (act === "prev") this.stepSearch(p, -1);
+      if (act === "next") this.stepSearch(p, 1);
+      if (act === "close") this.closeSearch(p);
+    });
+  }
+
+  /** Opens the search of the active pane (the one last clicked or scrolled). */
+  openSearch(p = this.activePane): void {
+    p.bar.hidden = false;
+    const input = $<HTMLInputElement>(".search-input", p.bar);
     const sel = window.getSelection()?.toString().trim();
     if (sel && sel.length < 80) input.value = sel;
     input.focus();
     input.select();
-    if (input.value) this.runSearch();
+    if (input.value) this.runSearch(p);
   }
 
-  closeSearch(): void {
-    $("#searchbar").hidden = true;
-    this.search.clear();
-    $("#search-count").textContent = "";
-    for (const p of this.panes) p.viewer.redecorate();
+  closeSearch(p = this.activePane): void {
+    p.bar.hidden = true;
+    clearTimeout(p.searchTimer);
+    p.search.clear();
+    $(".search-count", p.bar).textContent = "";
+    p.viewer.redecorate();
   }
 
-  private runSearch(): void {
-    clearTimeout(this.searchTimer);
-    this.searchTimer = window.setTimeout(() => {
-      const q = $<HTMLInputElement>("#search-input").value;
-      const cs = $<HTMLInputElement>("#search-case").checked;
-      void this.search.run(q, this.history.state.pages, this.activeViewer.currentIndex, cs);
+  private runSearch(p: Pane): void {
+    clearTimeout(p.searchTimer);
+    p.searchTimer = window.setTimeout(() => {
+      const q = $<HTMLInputElement>(".search-input", p.bar).value;
+      const cs = $<HTMLInputElement>(".search-case", p.bar).checked;
+      void p.search.run(q, this.history.state.pages, p.viewer.currentIndex, cs);
     }, 220);
   }
 
-  private onSearchUpdate(done: boolean, scanned: number, total: number): void {
-    const n = this.search.hits.length;
-    const el = $("#search-count");
-    if (!this.search.query.trim()) el.textContent = "";
+  private onSearchUpdate(p: Pane, done: boolean, scanned: number, total: number): void {
+    const n = p.search.hits.length;
+    const el = $(".search-count", p.bar);
+    if (!p.search.query.trim()) el.textContent = "";
     else if (!done) el.textContent = `${n} found · searching ${Math.round((scanned / Math.max(1, total)) * 100)}%`;
-    else el.textContent = n ? `${this.search.currentHit + 1} of ${n}` : "No results";
-    for (const p of this.panes) p.viewer.redecorate();
-    if (done && n && this.search.currentHit >= 0) this.showHit(this.search.hits[this.search.currentHit]);
+    else el.textContent = n ? `${p.search.currentHit + 1} of ${n}` : "No results";
+    p.viewer.redecorate();
+    if (done && n && p.search.currentHit >= 0) this.showHit(p, p.search.hits[p.search.currentHit]);
   }
 
-  private stepSearch(dir: 1 | -1): void {
-    const hit = this.search.step(dir);
+  private stepSearch(p: Pane, dir: 1 | -1): void {
+    const hit = p.search.step(dir);
     if (!hit) return;
-    $("#search-count").textContent = `${this.search.currentHit + 1} of ${this.search.hits.length}`;
-    this.showHit(hit);
-    for (const p of this.panes) p.viewer.redecorate();
+    $(".search-count", p.bar).textContent = `${p.search.currentHit + 1} of ${p.search.hits.length}`;
+    this.showHit(p, hit);
+    p.viewer.redecorate();
   }
 
-  private showHit(hit: { pageIndex: number; pageId: string; rects: number[][] }): void {
-    const i = this.history.state.pages.findIndex((p) => p.id === hit.pageId);
+  private showHit(p: Pane, hit: { pageIndex: number; pageId: string; rects: number[][] }): void {
+    const i = this.history.state.pages.findIndex((x) => x.id === hit.pageId);
     const r = hit.rects[0];
-    if (i >= 0) this.activeViewer.scrollToPage(i, r ? [r[0], r[1] + r[3]] : undefined);
+    if (i >= 0) p.viewer.scrollToPage(i, r ? [r[0], r[1] + r[3]] : undefined);
   }
 
   // ================================================================ chrome
@@ -854,14 +925,6 @@ export class App {
       opts().fontSize = f;
       for (const p of this.panes) p.overlay.styleSelected({ fontSize: f });
     });
-    const si = $<HTMLInputElement>("#search-input");
-    si.addEventListener("input", () => this.runSearch());
-    si.addEventListener("keydown", (e) => {
-      e.stopPropagation();
-      if (e.key === "Enter") this.stepSearch(e.shiftKey ? -1 : 1);
-      if (e.key === "Escape") this.closeSearch();
-    });
-    $<HTMLInputElement>("#search-case").addEventListener("change", () => this.runSearch());
   }
 
   private action(a: string): void {
@@ -898,13 +961,7 @@ export class App {
       case "split":
         return this.toggleSplit();
       case "search":
-        return $("#searchbar").hidden ? this.openSearch() : this.closeSearch();
-      case "searchNext":
-        return this.stepSearch(1);
-      case "searchPrev":
-        return this.stepSearch(-1);
-      case "searchClose":
-        return this.closeSearch();
+        return this.activePane.bar.hidden ? this.openSearch() : this.closeSearch();
       case "mark":
         return void this.addMark();
       case "image":
@@ -984,13 +1041,13 @@ export class App {
         return;
       }
       if (k === "escape") {
-        if (!$("#searchbar").hidden) return this.closeSearch();
+        if (!this.activePane.bar.hidden) return this.closeSearch();
         for (const p of this.panes) p.overlay.select(null);
         return this.setTool("select");
       }
       if (k === "f3") {
         e.preventDefault();
-        return this.stepSearch(e.shiftKey ? -1 : 1);
+        return this.stepSearch(this.activePane, e.shiftKey ? -1 : 1);
       }
       if (k === "home" && !e.shiftKey) return (e.preventDefault(), v.scrollToPage(0));
       if (k === "end" && !e.shiftKey) return (e.preventDefault(), v.scrollToPage(v.pageList.length - 1));
@@ -1087,6 +1144,20 @@ export class App {
     this.updatePageIndicators();
     this.updatePageOpsState();
     this.renderMarks();
+  }
+
+  /**
+   * Page bitmaps changed. Updates are event-driven (no polling timer), so an
+   * idle window uses no CPU; bursts are coalesced to one per frame.
+   */
+  private onCanvasChange(): void {
+    if (this.canvasChangePending) return;
+    this.canvasChangePending = true;
+    requestAnimationFrame(() => {
+      this.canvasChangePending = false;
+      this.updateMemoryStatus();
+      this.thumbs.refresh();
+    });
   }
 
   private updateMemoryStatus(): void {

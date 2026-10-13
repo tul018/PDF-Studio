@@ -1,6 +1,6 @@
 import type { DocumentStore } from "../core/documents";
 import type { Annotation, EditState, FormValue, PageRef, StoredImage } from "../edit/model";
-import { textLines } from "../edit/model";
+import { TEXT_FONTS, textLines } from "../edit/model";
 import type { PlanPage, SavePlan } from "./applyEdits";
 import SaveWorker from "./save.worker?worker";
 
@@ -174,7 +174,7 @@ async function renderTextPng(a: Extract<Annotation, { type: "text" }>): Promise<
   const ctx = canvas.getContext("2d")!;
   ctx.scale(k, k);
   ctx.fillStyle = a.color;
-  ctx.font = `${a.fontSize}px Helvetica, Arial, "Noto Sans", "Noto Sans Thai", "Leelawadee UI", "Thonburi", sans-serif`;
+  ctx.font = `${a.fontSize}px ${TEXT_FONTS}`;
   ctx.textBaseline = "alphabetic";
   for (const l of textLines(a)) ctx.fillText(l.text, 2, l.baseline + 2);
   const blob = await new Promise<Blob>((r) => canvas.toBlob((b) => r(b!), "image/png"));

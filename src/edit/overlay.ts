@@ -5,6 +5,7 @@ import {
   removeAnnotations,
   rotVec,
   simplifyPoints,
+  TEXT_FONTS,
   textLines,
   translateAnnotation,
   uid,
@@ -284,7 +285,7 @@ export class AnnotationOverlay implements Decorator {
             y: -a.box.h + line.baseline + 2,
             fill: a.color,
             "font-size": a.fontSize,
-            "font-family": "Helvetica, Arial, 'Noto Sans', 'Noto Sans Thai', sans-serif",
+            "font-family": TEXT_FONTS,
           });
           t.textContent = line.text || " ";
           inner.appendChild(t);
@@ -593,7 +594,7 @@ export class AnnotationOverlay implements Decorator {
     if (!a || a.type !== "text") return;
     const lines = ta.value.split("\n");
     const ctx = measureCtx();
-    ctx.font = `${a.fontSize}px Helvetica, Arial, sans-serif`;
+    ctx.font = `${a.fontSize}px ${TEXT_FONTS}`;
     const w = Math.max(60, ...lines.map((l) => ctx.measureText(l).width + 8));
     const h = a.fontSize * (0.5 + lines.length * 1.25);
     ta.style.width = `${Math.max(a.box.w, w) * v.scale}px`;
@@ -615,7 +616,7 @@ export class AnnotationOverlay implements Decorator {
       return;
     }
     const ctx = measureCtx();
-    ctx.font = `${a.fontSize}px Helvetica, Arial, sans-serif`;
+    ctx.font = `${a.fontSize}px ${TEXT_FONTS}`;
     const lines = text.split("\n");
     const w = Math.max(20, ...lines.map((l) => ctx.measureText(l).width + 6));
     const h = a.fontSize * (0.45 + lines.length * 1.25);

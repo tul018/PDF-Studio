@@ -221,12 +221,12 @@ body[data-active-tool="text"] .page-layers { cursor: text; }
 .text-editor {
   position: absolute; pointer-events: auto; transform-origin: 0 0; resize: none; overflow: hidden;
   background: rgba(255, 255, 255, 0.85); border: 1px dashed var(--accent); outline: none;
-  font-family: Helvetica, Arial, "Noto Sans", "Noto Sans Thai", sans-serif; line-height: 1.25; padding: 1px 2px; margin: 0;
+  font-family: Helvetica, Arial, "Leelawadee UI", Tahoma, Thonburi, "Noto Sans Thai", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", sans-serif; line-height: 1.25; padding: 1px 2px; margin: 0;
 }
 .form-layer { position: absolute; inset: 0; }
 .form-field {
   position: absolute; pointer-events: auto; margin: 0; padding: 0 2px; border: 1px solid transparent;
-  background: rgba(37, 99, 235, 0.09); color: #000; border-radius: 0; font-family: Helvetica, Arial, sans-serif;
+  background: rgba(37, 99, 235, 0.09); color: #000; border-radius: 0; font-family: Helvetica, Arial, "Leelawadee UI", Tahoma, Thonburi, "Noto Sans Thai", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
 }
 .form-field:hover { border-color: rgba(37, 99, 235, 0.6); }
 .form-field:focus { border-color: var(--accent); background: rgba(255, 255, 255, 0.95); outline: none; }
@@ -274,6 +274,8 @@ body:not([data-active-tool="select"]) .textLayer { pointer-events: none; }
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15);
 }
 .searchbar[hidden] { display: none; }
+/* Split view: each pane has its own search bar, below the pane header. */
+body.split .searchbar { top: 44px; right: 12px; }
 .searchbar input[type="search"] { width: 220px; }
 .check { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
 

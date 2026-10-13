@@ -249,6 +249,14 @@ export function annotationBounds(a: Annotation): [number, number, number, number
 }
 
 /** Text line baselines inside a text box, in the box's local frame (y down from top). */
+/**
+ * Fonts for typed text, on screen and in saved files (rasterized when the
+ * text isn't Latin): Latin first, then Thai and Chinese faces found on
+ * Windows, Apple devices and Linux. Keep src/styles.css (.text-editor) in sync.
+ */
+export const TEXT_FONTS =
+  'Helvetica, Arial, "Leelawadee UI", Tahoma, Thonburi, "Noto Sans Thai", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", sans-serif';
+
 export function textLines(a: Pick<TextAnnot, "text" | "fontSize">): { text: string; baseline: number }[] {
   return a.text.split("\n").map((text, i) => ({ text, baseline: a.fontSize * (0.95 + i * 1.25) }));
 }

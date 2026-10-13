@@ -12,6 +12,8 @@ const MAIN = "$main";
 interface Draft {
   key: string;
   savedAt: number;
+  /** Size + modified time of the file the edits were made to. */
+  version?: string;
   state: EditState;
   images: Record<string, Omit<StoredImage, "url">>;
 }
@@ -37,6 +39,7 @@ async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBReq
 
 export async function saveDraft(
   fileKey: string,
+  version: string,
   mainDocId: string,
   state: EditState,
   images: Map<string, StoredImage>,
@@ -61,7 +64,7 @@ export async function saveDraft(
         if (im) imgs[a.imageId] = { bytes: im.bytes, mime: im.mime, width: im.width, height: im.height };
       }
     }
-    await tx("readwrite", (s) => s.put({ key: fileKey, savedAt: Date.now(), state: portable, images: imgs } as Draft));
+    await tx("readwrite", (s) => s.put({ key: fileKey, savedAt: Date.now(), version, state: portable, images: imgs } as Draft));
   } catch (e) {
     console.warn("draft save failed", e);
   }
@@ -69,11 +72,18 @@ export async function saveDraft(
 
 export async function loadDraft(
   fileKey: string,
+  version: string,
   mainDocId: string,
 ): Promise<{ state: EditState; images: Draft["images"]; savedAt: number } | null> {
   try {
     const d = (await tx("readonly", (s) => s.get(fileKey))) as Draft | undefined;
     if (!d) return null;
+    // The file changed on disk since (saved elsewhere, replaced): the edits'
+    // page numbers and positions no longer apply to it.
+    if (d.version !== version) {
+      void clearDraft(fileKey);
+      return null;
+    }
     const st = d.state;
     return {
       savedAt: d.savedAt,

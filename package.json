@@ -18,7 +18,8 @@
     "app:build": "tauri build",
     "ios:init": "tauri ios init",
     "ios:dev": "tauri ios dev",
-    "ios:build": "tauri ios build"
+    "ios:build": "tauri ios build",
+    "bench": "npm run fixtures && npm run build && playwright test --config playwright.bench.config.ts"
   },
   "repository": {
     "type": "git",
@@ -36,6 +37,7 @@
     "pdfjs-dist": "^6.4.299"
   },
   "devDependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
     "@playwright/test": "^1.64.0",
     "@tauri-apps/cli": "^2.12.2",
     "typescript": "^7.0.2",

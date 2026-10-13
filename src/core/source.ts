@@ -13,10 +13,28 @@ export interface PdfSource {
   readonly size: number;
   /** Native path (Tauri desktop) when the file can be saved in place. */
   readonly path?: string;
+  /** Last-modified time (ms since 1970), when known. */
+  readonly modified?: number;
   /** True when readAll() returns a fresh buffer that may be transferred. */
   readonly freshReadAll: boolean;
   readRange(begin: number, end: number): Promise<Uint8Array>;
   readAll(): Promise<Uint8Array>;
+}
+
+/**
+ * Key for what is remembered per file (marks, last position, unsaved edits).
+ * On desktop it's the path, so it survives saving (which changes the size);
+ * elsewhere name + size + modified time, so two different "scan.pdf" files
+ * of the same size don't share marks.
+ */
+export function fileKeyOf(s: PdfSource): string {
+  if (s.path) return `path:${/^([a-z]:|\\\\)/i.test(s.path) ? s.path.toLowerCase() : s.path}`;
+  return `${s.name}:${s.size}:${s.modified ?? 0}`;
+}
+
+/** Fingerprint of the file's current contents (to validate autosaved edits). */
+export function fileVersionOf(s: PdfSource): string {
+  return `${s.size}:${s.modified ?? 0}`;
 }
 
 /** Browser/WebView File (input[type=file], drag & drop, iOS document picker). */
@@ -28,6 +46,9 @@ export class FileSource implements PdfSource {
   }
   get size() {
     return this.file.size;
+  }
+  get modified() {
+    return this.file.lastModified;
   }
   async readRange(begin: number, end: number): Promise<Uint8Array> {
     // File.slice is lazy: only these bytes are read from disk.
@@ -63,18 +84,42 @@ export class SourceRangeTransport extends PDFDataRangeTransport {
   constructor(private source: PdfSource) {
     super(source.size, null);
   }
+  /**
+   * Called on each failed read (with the error and how many reads have
+   * failed in a row) and once with `null` when reading works again.
+   */
+  onReadProblem: (err: unknown, failures: number) => void = () => {};
+  private failures = 0;
+
   override requestDataRange(begin: number, end: number): void {
+    this.read(begin, end, 0);
+  }
+
+  /**
+   * PDF.js has no way to report a failed range: the page would just wait
+   * forever. So keep retrying (with back-off) - an online-only OneDrive file,
+   * a USB stick plugged back in or a network drive reconnecting then simply
+   * finishes loading - and tell the app meanwhile.
+   */
+  private read(begin: number, end: number, attempt: number): void {
     this.source.readRange(begin, end).then(
       (chunk) => {
-        if (!this.aborted) {
-          // PDF.js may transfer the buffer to its worker; give it its own copy
-          // when the chunk is a view into a larger buffer.
-          const owned =
-            chunk.byteOffset === 0 && chunk.byteLength === chunk.buffer.byteLength ? chunk : chunk.slice();
-          this.onDataRange(begin, owned);
+        if (this.aborted) return;
+        if (this.failures) {
+          this.failures = 0;
+          this.onReadProblem(null, 0);
         }
+        // PDF.js may transfer the buffer to its worker; give it its own copy
+        // when the chunk is a view into a larger buffer.
+        const owned = chunk.byteOffset === 0 && chunk.byteLength === chunk.buffer.byteLength ? chunk : chunk.slice();
+        this.onDataRange(begin, owned);
       },
-      (err) => console.error("range read failed", begin, end, err),
+      (err) => {
+        if (this.aborted) return;
+        console.warn("range read failed", begin, end, err);
+        this.onReadProblem(err, ++this.failures);
+        setTimeout(() => this.aborted || this.read(begin, end, attempt + 1), Math.min(10_000, 500 * 2 ** attempt));
+      },
     );
   }
   override abort(): void {

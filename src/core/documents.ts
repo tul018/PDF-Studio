@@ -41,13 +41,31 @@ export type PasswordPrompt = (reason: "need" | "incorrect") => Promise<string | 
  */
 export class DocumentStore {
   readonly docs = new Map<DocId, LoadedDoc>();
-  private meta = new Map<string, PageMeta>();
+  /** Per document, indexed by page: plain arrays, since this is hit on every frame. */
+  private meta = new Map<DocId, (PageMeta | undefined)[]>();
   private metaPending = new Map<string, Promise<PageMeta>>();
-  private sizeListeners = new Set<(docId: DocId, index: number) => void>();
+  private sizeListeners = new Set<(docId: DocId, indices: readonly number[]) => void>();
+  /** Sizes loaded but not yet announced; flushed together (see notifySize). */
+  private sizeQueue = new Map<DocId, number[]>();
+  private sizeFlushTimer = 0;
   private scanToken = 0;
+  private transports = new Map<DocId, SourceRangeTransport>();
+  /** An open file can't be read right now (`err`), or can be again (`null`). */
+  onReadProblem: (source: PdfSource, err: unknown) => void = () => {};
 
   async open(source: PdfSource, askPassword: PasswordPrompt, onProgress?: (f: number) => void): Promise<LoadedDoc> {
     const transport = new SourceRangeTransport(source);
+    let opened: LoadedDoc | null = null;
+    let openError: unknown = null;
+    transport.onReadProblem = (err, failures) => {
+      if (opened) return this.onReadProblem(source, err);
+      // Still opening: don't leave "Opening..." up forever.
+      if (err && failures >= 3 && openError === null) {
+        openError = err;
+        transport.abort();
+        void task.destroy();
+      }
+    };
     const task = getDocument({
       range: transport,
       length: source.size,
@@ -74,7 +92,15 @@ export class DocumentStore {
     task.onProgress = ({ loaded, total }: { loaded: number; total: number }) => {
       if (onProgress && total) onProgress(Math.min(1, loaded / total));
     };
-    const pdf = await task.promise;
+    let pdf: PDFDocumentProxy;
+    try {
+      pdf = await task.promise;
+    } catch (e) {
+      if (openError === null) throw e;
+      const err = new Error(`the file can't be read (${(openError as Error)?.message ?? openError})`);
+      err.name = "FileReadError";
+      throw err;
+    }
     if (!encrypted) {
       try {
         // Encrypted-but-no-password files (permissions only) still load.
@@ -86,6 +112,8 @@ export class DocumentStore {
     }
     const doc: LoadedDoc = { id: uid("doc"), source, pdf, task, numPages: pdf.numPages, encrypted };
     this.docs.set(doc.id, doc);
+    this.transports.set(doc.id, transport);
+    opened = doc;
     await this.loadMeta(doc.id, 0); // first page = size estimate for the rest
     return doc;
   }
@@ -94,14 +122,39 @@ export class DocumentStore {
     this.scanToken++;
     const docs = [...this.docs.values()];
     this.docs.clear();
+    for (const t of this.transports.values()) t.abort(); // stop retrying reads of closed files
+    this.transports.clear();
     this.meta.clear();
     this.metaPending.clear();
+    this.sizeQueue.clear();
     await Promise.all(docs.map((d) => d.task.destroy().catch(() => {})));
   }
 
-  onSize(fn: (docId: DocId, index: number) => void): () => void {
+  /** Page sizes became known: called with all pages loaded since the last call. */
+  onSize(fn: (docId: DocId, indices: readonly number[]) => void): () => void {
     this.sizeListeners.add(fn);
     return () => this.sizeListeners.delete(fn);
+  }
+
+  /**
+   * Announce sizes in batches, at most ~30 times a second. One relayout per
+   * page made the background size scan O(pages²): seconds of main-thread
+   * time (and dropped frames) on a 2000-page document.
+   */
+  private notifySize(docId: DocId, index: number): void {
+    const q = this.sizeQueue.get(docId);
+    if (q) q.push(index);
+    else this.sizeQueue.set(docId, [index]);
+    if (this.sizeFlushTimer) return;
+    this.sizeFlushTimer = window.setTimeout(() => {
+      this.sizeFlushTimer = 0;
+      const batches = [...this.sizeQueue];
+      this.sizeQueue.clear();
+      for (const [id, indices] of batches) {
+        if (!this.docs.has(id)) continue;
+        for (const fn of this.sizeListeners) fn(id, indices);
+      }
+    }, 32);
   }
 
   getPage(ref: PageRef): Promise<PDFPageProxy> | null {
@@ -113,21 +166,23 @@ export class DocumentStore {
 
   metaOf(ref: PageRef): PageMeta | undefined {
     if (!ref.docId) return undefined;
-    return this.meta.get(`${ref.docId}:${ref.srcIndex}`);
+    return this.meta.get(ref.docId)?.[ref.srcIndex];
   }
 
   loadMeta(docId: DocId, index: number): Promise<PageMeta> {
-    const key = `${docId}:${index}`;
-    const m = this.meta.get(key);
+    const m = this.meta.get(docId)?.[index];
     if (m) return Promise.resolve(m);
+    const key = `${docId}:${index}`;
     let p = this.metaPending.get(key);
     if (!p) {
       const d = this.docs.get(docId)!;
       p = d.pdf.getPage(index + 1).then((page) => {
         const meta = { view: page.view.slice(), rotate: page.rotate };
-        this.meta.set(key, meta);
+        let list = this.meta.get(docId);
+        if (!list) this.meta.set(docId, (list = []));
+        list[index] = meta;
         this.metaPending.delete(key);
-        for (const fn of this.sizeListeners) fn(docId, index);
+        this.notifySize(docId, index);
         return meta;
       });
       this.metaPending.set(key, p);
@@ -135,18 +190,22 @@ export class DocumentStore {
     return p;
   }
 
+  /** Meta of the page, or of page 1 as an estimate until it's known. */
+  private metaOrEstimate(ref: PageRef): PageMeta | undefined {
+    const list = this.meta.get(ref.docId!);
+    return list?.[ref.srcIndex] ?? list?.[0];
+  }
+
   /** User-space view box (blank pages: 0,0,w,h). */
   viewBox(ref: PageRef): number[] {
     if (!ref.docId) return [0, 0, ref.blank!.width, ref.blank!.height];
-    const m = this.metaOf(ref) ?? this.meta.get(`${ref.docId}:0`);
-    return m ? m.view : [0, 0, 612, 792];
+    return this.metaOrEstimate(ref)?.view ?? [0, 0, 612, 792];
   }
 
   /** Total rotation = intrinsic /Rotate + user rotation. */
   rotation(ref: PageRef): number {
     if (!ref.docId) return ref.rotation;
-    const m = this.metaOf(ref) ?? this.meta.get(`${ref.docId}:0`);
-    return ((m?.rotate ?? 0) + ref.rotation) % 360;
+    return ((this.metaOrEstimate(ref)?.rotate ?? 0) + ref.rotation) % 360;
   }
 
   /** Displayed size at zoom 1 in CSS px (1pt = 1px * 96/72). */

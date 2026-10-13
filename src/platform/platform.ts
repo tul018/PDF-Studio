@@ -33,13 +33,14 @@ export class NativeSource implements PdfSource {
   constructor(
     readonly path: string,
     readonly size: number,
+    readonly modified: number,
   ) {}
   get name(): string {
     return this.path.split(/[\\/]/).pop() || "document.pdf";
   }
   static async open(path: string): Promise<NativeSource> {
-    const size = await invoke<number>("file_size", { path });
-    return new NativeSource(path, size);
+    const [size, modified] = await invoke<[number, number]>("file_info", { path });
+    return new NativeSource(path, size, modified);
   }
   async readRange(begin: number, end: number): Promise<Uint8Array> {
     const buf = await invoke<ArrayBuffer>("read_range", { path: this.path, offset: begin, length: end - begin });

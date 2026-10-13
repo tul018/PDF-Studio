@@ -23,15 +23,38 @@ export class Marks {
   private key = "";
   onChange: () => void = () => {};
 
-  load(fileKey: string): void {
+  /** `legacyKey`: where earlier versions kept this file's marks (moved over once). */
+  load(fileKey: string, legacyKey?: string): void {
     this.key = `pdfstudio:marks:${fileKey}`;
     try {
-      this.list = JSON.parse(localStorage.getItem(this.key) ?? "[]");
+      let raw = localStorage.getItem(this.key);
+      const legacy = legacyKey ? `pdfstudio:marks:${legacyKey}` : null;
+      if (raw === null && legacy) {
+        raw = localStorage.getItem(legacy);
+        if (raw !== null) {
+          localStorage.setItem(this.key, raw);
+          localStorage.removeItem(legacy);
+        }
+      }
+      this.list = JSON.parse(raw ?? "[]");
       if (!Array.isArray(this.list)) this.list = [];
     } catch {
       this.list = [];
     }
     this.onChange();
+  }
+
+  /**
+   * After saving over the file with pages moved or deleted: move each mark to
+   * its page's new number, and drop marks whose page is gone.
+   */
+  remap(newIndex: (srcIndex: number) => number | undefined): void {
+    this.list = this.list.flatMap((m) => {
+      const i = newIndex(m.srcIndex);
+      return i === undefined ? [] : [{ ...m, srcIndex: i }];
+    });
+    this.list.sort((a, b) => a.srcIndex - b.srcIndex || a.fy - b.fy);
+    this.persist();
   }
 
   clear(): void {

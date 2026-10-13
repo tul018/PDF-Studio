@@ -16,11 +16,11 @@ test("opens a PDF, navigates and searches", async ({ page }) => {
   await page.press("#page-input", "Enter");
   await expect(page.locator("#status-page")).toHaveText("Page 6 of 12");
   await page.keyboard.press("Control+f");
-  await page.fill("#search-input", "needle");
-  await expect(page.locator("#search-count")).toHaveText("1 of 2");
+  await page.fill(".pane.active .search-input", "needle");
+  await expect(page.locator(".pane.active .search-count")).toHaveText("1 of 2");
   await expect(page.locator(".search-hit").first()).toBeAttached();
-  await page.press("#search-input", "Enter");
-  await expect(page.locator("#search-count")).toHaveText("2 of 2");
+  await page.press(".pane.active .search-input", "Enter");
+  await expect(page.locator(".pane.active .search-count")).toHaveText("2 of 2");
   await expect(page.locator("#status-page")).toHaveText("Page 10 of 12");
 });
 
@@ -116,7 +116,7 @@ test("true redaction removes text under the box", async ({ page }) => {
   await page.fill("#page-input", "3");
   await page.press("#page-input", "Enter");
   await page.keyboard.press("Control+f");
-  await page.fill("#search-input", "needle");
+  await page.fill(".pane.active .search-input", "needle");
   const hit = page.locator(".search-hit.current");
   await expect(hit).toBeAttached();
   const hb = (await hit.boundingBox())!;
@@ -187,6 +187,39 @@ test("split view shows two far-apart pages side by side", async ({ page }) => {
   await page.screenshot({ path: "test-results/split-view.png" });
   await bPane.locator(".pane-close").click();
   await expect(page.locator(".pane")).toHaveCount(1);
+});
+
+test("split view: each pane has its own search", async ({ page }) => {
+  await openPdf(page, "basic.pdf");
+  await page.keyboard.press("Control+\\");
+  await expect(page.locator(".pane")).toHaveCount(2);
+  const a = page.locator(".pane").nth(0);
+  const b = page.locator(".pane").nth(1);
+  // Left pane: "needle" (pages 3 and 10).
+  await a.locator(".viewer").click({ position: { x: 5, y: 200 } });
+  await page.keyboard.press("Control+f");
+  await a.locator(".search-input").fill("needle");
+  await expect(a.locator(".search-count")).toHaveText("1 of 2");
+  // Right pane: a different word, its own results.
+  await b.locator(".viewer").click({ position: { x: 5, y: 200 } });
+  await page.keyboard.press("Control+f");
+  await b.locator(".search-input").fill("Marker-7");
+  await expect(b.locator(".search-count")).toHaveText("1 of 1");
+  await expect(b.locator('.page[data-page-number="7"] .search-hit.current')).toBeInViewport();
+  // Stepping in the left pane moves only the left pane.
+  await a.locator(".search-input").press("Enter");
+  await expect(a.locator(".search-count")).toHaveText("2 of 2");
+  await expect(a.locator('.page[data-page-number="10"] .search-hit.current')).toBeInViewport();
+  await expect(b.locator('.page[data-page-number="7"] .search-hit.current')).toBeInViewport();
+  await expect(b.locator(".search-count")).toHaveText("1 of 1");
+  // Each pane only highlights its own hits.
+  await expect(a.locator(".search-hit")).not.toHaveCount(0);
+  await expect(b.locator('.page[data-page-number="7"] .search-hit')).not.toHaveCount(0);
+  await expect(a.locator('.page[data-page-number="7"] .search-hit')).toHaveCount(0);
+  // Closing one search leaves the other alone.
+  await b.locator('[data-search-act="close"]').click();
+  await expect(b.locator(".searchbar")).toBeHidden();
+  await expect(a.locator(".searchbar")).toBeVisible();
 });
 
 test("@mobile iPad profile opens the heavy file within the smaller budget", async ({ page }) => {

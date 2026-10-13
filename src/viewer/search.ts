@@ -21,15 +21,21 @@ export interface SearchHit {
  * scrolling. Extracted text is kept in a size-bounded LRU, so searching a
  * 10 000-page file doesn't hold the whole text in memory forever.
  */
+/** Extracted page text, shared by every Search (each split pane has its own). */
+export type TextCache = WeightedLRU<PageText>;
+export const newTextCache = (): TextCache => new WeightedLRU<PageText>(24 * 1024 * 1024);
+
 export class Search {
-  private cache = new WeightedLRU<PageText>(24 * 1024 * 1024);
   private token = 0;
   hits: SearchHit[] = [];
   currentHit = -1;
   query = "";
   onUpdate: (done: boolean, scanned: number, total: number) => void = () => {};
 
-  constructor(private store: DocumentStore) {}
+  constructor(
+    private store: DocumentStore,
+    private cache: TextCache = newTextCache(),
+  ) {}
 
   clear(): void {
     this.token++;
@@ -65,11 +71,23 @@ export class Search {
     const found: SearchHit[][] = new Array(n);
     let scanned = 0;
     let lastEmit = performance.now();
+    // Ask for a few pages ahead, so the PDF worker always has the next page
+    // queued instead of idling for a round trip after each one.
+    const AHEAD = 4;
+    const ahead = new Map<number, Promise<PageText | null>>();
+    const prefetch = (k: number) => {
+      if (k >= n || ahead.has(k)) return;
+      const ref = pages[(startIndex + k) % n];
+      ahead.set(k, ref.docId ? this.pageText(ref).catch(() => null) : Promise.resolve(null));
+    };
     for (let k = 0; k < n; k++) {
       const i = (startIndex + k) % n;
       const ref = pages[i];
+      for (let j = k; j <= k + AHEAD; j++) prefetch(j);
+      const pending = ahead.get(k)!;
+      ahead.delete(k);
       if (!ref.docId) continue;
-      const pt = await this.pageText(ref).catch(() => null);
+      const pt = await pending;
       if (token !== this.token) return;
       scanned++;
       if (pt) {
@@ -112,18 +130,28 @@ export class Search {
     if (cached) return cached;
     const page = await this.store.getPage(ref);
     if (!page) return null;
-    const tc = await page.getTextContent();
+    // normalize() below already does NFKC; skip the worker's own pass.
+    const tc = await page.getTextContent({ disableNormalization: true });
     let text = "";
     const items: number[] = [];
     let count = 0;
+    let sep = "";
     for (const it of tc.items as Array<{ str?: string; transform?: number[]; width?: number; height?: number; hasEOL?: boolean }>) {
       if (typeof it.str !== "string" || !it.transform) continue;
       const s = normalize(it.str);
+      if (!s) {
+        if (it.hasEOL) sep = "\n";
+        continue;
+      }
+      // Thai, Chinese and Japanese don't put spaces between words: PDFs often
+      // split such text into many pieces (and lines), and a separator there
+      // would make "你好" or a Thai word unfindable.
+      if (sep && !(NO_SPACE_SCRIPT.test(text.slice(-1)) && NO_SPACE_SCRIPT.test(s[0]))) text += sep;
       const [a, b, , , e, f] = it.transform;
       items.push(text.length, s.length, e, f, it.width ?? 0, it.height || Math.hypot(a, b) || 10, a, b);
       text += s;
       count++;
-      text += it.hasEOL ? "\n" : s.endsWith(" ") ? "" : " ";
+      sep = it.hasEOL ? "\n" : s.endsWith(" ") ? "" : " ";
     }
     const pt: PageText = { text, items: new Float64Array(items), count };
     this.cache.set(key, pt, text.length * 2 + items.length * 8);
@@ -131,6 +159,9 @@ export class Search {
     return pt;
   }
 }
+
+/** Scripts written without spaces between words: Thai, Lao, Khmer, Myanmar, CJK, kana, full-width forms. */
+const NO_SPACE_SCRIPT = /[฀-໿က-႟ក-៿　-ヿ㐀-䶿一-鿿豈-﫿＀-￯]/;
 
 function normalize(s: string): string {
   return s.normalize("NFKC").replace(/\s+/g, " ");

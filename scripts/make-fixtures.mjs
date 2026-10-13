@@ -3,11 +3,21 @@
 //   form.pdf         AcroForm with text field, checkbox, dropdown
 //   heavy-images.pdf 400 pages, each with a 3200x2400 RGB image (~23 MB decoded
 //                    per page) - the kind of file that crashes naive viewers.
+//   long-text.pdf    2000 pages of dense text (search / scrolling benchmarks);
+//                    "zebra" appears only on the last page.
+//   languages.pdf    English, Chinese (standard non-embedded STSong font, as
+//                    many Chinese PDFs use) and Thai (embedded system font,
+//                    when one is found), with words split into separate text
+//                    pieces and across lines - the hard cases for search.
 import { deflateSync } from "node:zlib";
-import { mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PDFDocument, StandardFonts, rgb, degrees, PDFName, pushGraphicsState, popGraphicsState, concatTransformationMatrix, drawObject } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
+import {
+  PDFDocument, StandardFonts, rgb, degrees, PDFName, PDFHexString, PDFString, pushGraphicsState, popGraphicsState,
+  concatTransformationMatrix, drawObject, beginText, endText, setFontAndSize, moveText, showText,
+} from "pdf-lib";
 
 const out = join(dirname(fileURLToPath(import.meta.url)), "..", "tests", "fixtures");
 mkdirSync(out, { recursive: true });
@@ -86,7 +96,76 @@ async function heavy() {
   writeFileSync(join(out, "heavy-images.pdf"), await doc.save({ useObjectStreams: true }));
 }
 
-for (const [name, fn] of [["basic.pdf", basic], ["form.pdf", form], ["heavy-images.pdf", heavy]]) {
+async function longText() {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const words = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua".split(" ");
+  let s = 7;
+  const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff), s >> 8);
+  for (let i = 1; i <= 2000; i++) {
+    const page = doc.addPage([612, 792]);
+    page.drawText(`Chapter page ${i}`, { x: 54, y: 740, size: 18, font });
+    for (let l = 0; l < 52; l++) {
+      const line = [];
+      for (let w = 0; w < 14; w++) line.push(words[rnd() % words.length]);
+      if (i === 2000 && l === 30) line[3] = "zebra";
+      page.drawText(line.join(" "), { x: 54, y: 710 - l * 12.5, size: 10, font });
+    }
+  }
+  writeFileSync(join(out, "long-text.pdf"), await doc.save({ useObjectStreams: true }));
+}
+
+const THAI_FONTS = [
+  "C:/Windows/Fonts/tahoma.ttf",
+  "C:/Windows/Fonts/LeelawUI.ttf",
+  "/usr/share/fonts/truetype/tlwg/Garuda.ttf",
+  "/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf",
+  "/usr/share/fonts/opentype/tlwg/Garuda.otf",
+];
+
+async function languages() {
+  const doc = await PDFDocument.create();
+  doc.registerFontkit(fontkit);
+  const page = doc.addPage([612, 792]);
+  const helv = await doc.embedFont(StandardFonts.Helvetica);
+  page.drawText("Languages test: hello world", { x: 54, y: 730, size: 18, font: helv });
+
+  // Chinese with the standard Adobe-GB1 font, not embedded: the viewer must
+  // use its bundled CMaps plus a system font.
+  const ctx = doc.context;
+  const descriptor = ctx.register(ctx.obj({
+    Type: "FontDescriptor", FontName: "STSong-Light", Flags: 6, FontBBox: [-25, -254, 1000, 880],
+    ItalicAngle: 0, Ascent: 880, Descent: -120, CapHeight: 880, StemV: 93,
+  }));
+  const cid = ctx.register(ctx.obj({
+    Type: "Font", Subtype: "CIDFontType0", BaseFont: "STSong-Light", DW: 1000, FontDescriptor: descriptor,
+    CIDSystemInfo: { Registry: PDFString.of("Adobe"), Ordering: PDFString.of("GB1"), Supplement: 4 },
+  }));
+  page.node.setFontDictionary(PDFName.of("FZh"), ctx.register(ctx.obj({
+    Type: "Font", Subtype: "Type0", BaseFont: "STSong-Light-UniGB-UCS2-H", Encoding: "UniGB-UCS2-H", DescendantFonts: [cid],
+  })));
+  const ucs2 = (s) => PDFHexString.of([...s].map((c) => c.codePointAt(0).toString(16).padStart(4, "0")).join(""));
+  const zh = (s, x, y) => page.pushOperators(beginText(), setFontAndSize("FZh", 20), moveText(x, y), showText(ucs2(s)), endText());
+  zh("你", 54, 680); // "你好" as two separate pieces
+  zh("好", 74, 680);
+  zh("中文测试世界", 54, 640); // "世界和平" continues on the next line
+  zh("和平之城", 54, 615);
+
+  // Thai with an embedded font (Thai has no standard PDF font).
+  const thaiPath = THAI_FONTS.find((p) => existsSync(p));
+  if (thaiPath) {
+    const thai = await doc.embedFont(readFileSync(thaiPath), { subset: true });
+    page.drawText("สวัส", { x: 54, y: 560, size: 20, font: thai }); // "สวัสดี" as two pieces
+    page.drawText("ดี", { x: 54 + thai.widthOfTextAtSize("สวัส", 20), y: 560, size: 20, font: thai });
+    page.drawText("ภาษาไทยอ่านได้", { x: 54, y: 520, size: 20, font: thai });
+  } else {
+    console.warn("languages.pdf: no Thai font found, Thai part skipped");
+  }
+  writeFileSync(join(out, "languages.pdf"), await doc.save());
+  writeFileSync(join(out, "languages.json"), JSON.stringify({ thai: !!thaiPath }));
+}
+
+for (const [name, fn] of [["basic.pdf", basic], ["form.pdf", form], ["heavy-images.pdf", heavy], ["long-text.pdf", longText], ["languages.pdf", languages]]) {
   if (!force && existsSync(join(out, name))) continue;
   const t = Date.now();
   await fn();

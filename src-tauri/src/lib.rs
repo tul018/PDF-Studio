@@ -19,9 +19,18 @@ fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
+/// Size and last-modified time (ms since 1970). Together with the path they
+/// tell whether a file changed since unsaved edits to it were autosaved.
 #[tauri::command]
-fn file_size(path: String) -> Result<u64, String> {
-    fs::metadata(&path).map(|m| m.len()).map_err(err)
+fn file_info(path: String) -> Result<(u64, u64), String> {
+    let meta = fs::metadata(&path).map_err(err)?;
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    Ok((meta.len(), modified))
 }
 
 #[tauri::command]
@@ -125,7 +134,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            file_size,
+            file_info,
             read_range,
             read_file,
             write_file,

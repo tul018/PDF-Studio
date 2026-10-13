@@ -11,6 +11,7 @@ import {
   PDFName,
   PDFOptionList,
   PDFRadioGroup,
+  PDFRef,
   PDFTextField,
   popGraphicsState,
   pushGraphicsState,
@@ -21,6 +22,7 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import { rotVec, textLines, type Annotation, type Box, type FormValue } from "../edit/model";
+import { copyDocumentStructure, detachPageLinks, pruneUnreachable, relinkPage, type PageTarget } from "./structure";
 
 /**
  * Pure "apply the edit model to the source bytes" step. Runs inside a Web
@@ -85,7 +87,11 @@ export async function applyEdits(plan: SavePlan, onProgress: Progress = () => {}
         }
       }
     }
-    out = await PDFDocument.create();
+    // Links between pages would otherwise pull deleted/redacted pages along.
+    for (const [id, doc] of src) {
+      detachPageLinks(doc, new Set(plan.pages.filter((p) => p.docId === id && !p.raster).map((p) => p.srcIndex)));
+    }
+    out = await PDFDocument.create({ updateMetadata: false });
     const copies = new Map<string, Map<number, PDFPage>>();
     for (const id of usedDocIds) {
       const indices = [...new Set(plan.pages.filter((p) => p.docId === id && !p.raster).map((p) => p.srcIndex))];
@@ -113,6 +119,17 @@ export async function applyEdits(plan: SavePlan, onProgress: Progress = () => {}
         out.addPage(page);
       }
     }
+
+    const where = new Map<string, PDFRef>();
+    plan.pages.forEach((p, i) => {
+      const key = `${p.docId}|${p.srcIndex}`;
+      if (p.docId && !where.has(key)) where.set(key, out.getPage(i).ref);
+    });
+    const target: PageTarget = (docId, srcIndex) => where.get(`${docId}|${srcIndex}`);
+    plan.pages.forEach((p, i) => {
+      if (p.docId && !p.raster) relinkPage(out, out.getPage(i).ref, p.docId, target);
+    });
+    copyDocumentStructure(out, [...src], target);
   }
 
   const fonts = new FontCache(out);
@@ -129,6 +146,7 @@ export async function applyEdits(plan: SavePlan, onProgress: Progress = () => {}
     if (i % 25 === 0) onProgress(i, total);
   }
   onProgress(total, total);
+  if (!identity) pruneUnreachable(out);
 
   try {
     return await out.save({ useObjectStreams: true });

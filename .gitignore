@@ -4,6 +4,8 @@ public/pdfjs/
 test-results/
 playwright-report/
 tests/fixtures/*.pdf
+tests/fixtures/*.json
 src-tauri/target/
 src-tauri/gen/
 *.log
+bench-results/
