@@ -65,8 +65,13 @@ jobs:
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
       - run: npm ci
+      - name: No Apple developer team yet
+        if: env.APPLE_DEVELOPMENT_TEAM == ''
+        run: echo "Set the APPLE_DEVELOPMENT_TEAM secret to build the iPhone / iPad app."
       - run: npx tauri ios init --ci
+        if: env.APPLE_DEVELOPMENT_TEAM != ''
       - name: Build (signed .ipa when APPLE_DEVELOPMENT_TEAM is set, simulator build otherwise)
+        if: env.APPLE_DEVELOPMENT_TEAM != ''
         run: |
           if [ -n "$APPLE_DEVELOPMENT_TEAM" ]; then
             npx tauri ios build --ci --export-method app-store-connect
@@ -75,6 +80,7 @@ jobs:
             npx tauri ios build --ci --target aarch64-sim --debug || npx tauri ios build --ci --target aarch64-sim
           fi
       - uses: actions/upload-artifact@v4
+        if: env.APPLE_DEVELOPMENT_TEAM != ''
         with:
           name: pdf-studio-ios
           path: |

@@ -5,7 +5,7 @@ import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { unzipSync, strFromU8 } from "fflate";
 import { readFileSync, writeFileSync } from "node:fs";
 async function saveAndRead(page:import("@playwright/test").Page){const download=page.waitForEvent("download",{timeout:15000});await cmd(page, '[data-action="save"]');return new Uint8Array(readFileSync((await(await download).path())!));}
-async function tool(page:import("@playwright/test").Page,name:string){await cmd(page, '[data-action="professional"]');await page.locator(`[data-pro="${name}"]`).click();}
+async function tool(page:import("@playwright/test").Page,name:string){await cmd(page, '[data-action="professional"]');await page.locator(`[data-pro="${name}"]:not(.menu-item)`).click();}
 async function text(bytes:Uint8Array){const task=getDocument({data:bytes.slice(),standardFontDataUrl:"node_modules/pdfjs-dist/standard_fonts/"});try{const doc=await task.promise;return(await(await doc.getPage(1)).getTextContent()).items.flatMap(i=>"str"in i?[i.str]:[]).join(" ");}finally{await task.destroy();}}
 test.beforeEach(async({page})=>{await page.goto("/");await openPdf(page,"basic.pdf");});
 test("professional tools create fields and searchable Bates numbering",async({page})=>{

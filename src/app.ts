@@ -1548,7 +1548,8 @@ export class App {
     document.addEventListener("click", (e) => {
       const el = (e.target as Element).closest<HTMLElement>("[data-action],[data-tool],[data-page-op],[data-pro],[data-view]");
       if (!el || (el as HTMLButtonElement).disabled) return;
-      if (el.dataset.pro) return void this.workbench.run(el.dataset.pro);
+      // Menu items only: the professional tools panel runs its own buttons.
+      if (el.dataset.pro) return void (el.closest(".menubar") && this.workbench.run(el.dataset.pro));
       if (el.dataset.view) {
         const sel = $<HTMLSelectElement>("#view-mode");
         sel.value = el.dataset.view;
