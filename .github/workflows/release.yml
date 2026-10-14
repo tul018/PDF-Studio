@@ -20,13 +20,35 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci
-      - run: npm run app:build
+      - name: Prepare signed updates when hosting is configured
+        env:
+          PDF_STUDIO_UPDATE_URL: ${{ vars.PDF_STUDIO_UPDATE_URL }}
+          PDF_STUDIO_UPDATE_PUBLIC_KEY: ${{ vars.PDF_STUDIO_UPDATE_PUBLIC_KEY }}
+        shell: pwsh
+        run: |
+          if ($env:PDF_STUDIO_UPDATE_URL -and $env:PDF_STUDIO_UPDATE_PUBLIC_KEY) {
+            npm run updates:prepare
+            "VITE_UPDATES_CONFIGURED=1" >> $env:GITHUB_ENV
+          }
+      - name: Build installers
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        shell: pwsh
+        run: |
+          if ($env:VITE_UPDATES_CONFIGURED -eq '1') {
+            npm run app:build -- --config src-tauri/updater.release.json
+          } else {
+            npm run app:build
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: pdf-studio-windows
           path: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.sig
+            src-tauri/target/release/bundle/msi/*.sig
 
   ios:
     name: iOS / iPadOS app
