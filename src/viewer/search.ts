@@ -194,7 +194,7 @@ function normalize(s: string): string {
 }
 
 /** Approximate rectangles (user space) covering text[start, end). */
-function rectsFor(pt: PageText, start: number, end: number): number[][] {
+export function rectsFor(pt: PageText, start: number, end: number): number[][] {
   const out: number[][] = [];
   const it = pt.items;
   for (let k = 0; k < pt.count; k++) {

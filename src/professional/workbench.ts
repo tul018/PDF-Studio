@@ -3,7 +3,7 @@ import { BytesSource } from "../core/source";
 import { buildPdf } from "../save/saver";
 import { modal, title, buttons, toast, confirmDialog, progressOverlay } from "../ui/dialogs";
 import { formDialog } from "./forms";
-import { addFields, addHeaders, setBookmarks, comments, editComment, changedPixels, distance, area } from "./pdfTools";
+import { addFields, addHeaders, setBookmarks, comments, editComment, distance, area } from "./pdfTools";
 import { renderPage, sanitizedCopy, withPdf } from "./render";
 import { Search, extractPageText } from "../viewer/search";
 import { uid, type Annotation } from "../edit/model";
@@ -19,7 +19,7 @@ export class Workbench {
     try {
       if (!this.app.mainDoc && action !== "batch") throw new Error("Open a PDF first.");
       switch (action) {
-        case "compare": return await this.compare();
+        case "compare": return await this.app.compareOther();
         case "redactSearch": return await this.redactSearch();
         case "sanitize": {
           if (!await confirmDialog("Remove hidden information", "Create an image-only copy of the visible pages. This removes metadata, attachments, comments, hidden layers, old revisions, forms and searchable text. The original stays open.", "Create clean copy")) return;
@@ -122,33 +122,6 @@ export class Workbench {
       }
       buttons(box,[{label:"Export comments",onClick:()=>{void this.download(new TextEncoder().encode(JSON.stringify(list,null,2)),"json");}},{label:"Close",onClick:close}]);
     });
-  }
-  async compare() {
-    const picked = await this.app.platform.pickFiles(); if (!picked.length) return;
-    const left = await this.bytes(), right = await picked[0].readAll();
-    await withPdf(left, a => withPdf(right, b => new Promise<void>(resolve => {
-      let index = 0, generation = 0;
-      modal((box, close) => {
-        box.classList.add("pro-wide"); title(box,"Compare PDFs",`${this.app.mainDoc?.source.name} ↔ ${picked[0].name}`);
-        const status=document.createElement("p"), grid=document.createElement("div"); grid.className="compare-grid"; box.append(status,grid);
-        let rendering = false, closed = false;
-        const draw = async () => {
-          if (rendering || closed) return; rendering = true; const token=++generation;
-          try {
-            const canvases: HTMLCanvasElement[]=[];
-            for (const pdf of [a,b]) { if(index<pdf.numPages) canvases.push((await renderPage(pdf,index,96)).canvas); else {const c=document.createElement("canvas");c.width=612;c.height=792;canvases.push(c);} }
-            if (closed || token!==generation) return;
-            const w=Math.max(...canvases.map(c=>c.width)),h=Math.max(...canvases.map(c=>c.height));
-            const normalized=canvases.map(c=>{const out=document.createElement("canvas");out.width=w;out.height=h;const ctx=out.getContext("2d")!;ctx.fillStyle="white";ctx.fillRect(0,0,w,h);ctx.drawImage(c,0,0);c.width=c.height=0;return out;});
-            const diff=changedPixels(normalized[0].getContext("2d")!.getImageData(0,0,w,h).data,normalized[1].getContext("2d")!.getImageData(0,0,w,h).data);
-            const overlay=document.createElement("canvas");overlay.width=w;overlay.height=h;overlay.getContext("2d")!.putImageData(new ImageData(diff.overlay as Uint8ClampedArray<ArrayBuffer>,w,h),0,0);
-            normalized[1].getContext("2d")!.drawImage(overlay,0,0); grid.replaceChildren(...normalized);
-            status.textContent=`Page ${index+1} of ${Math.max(a.numPages,b.numPages)} · ${diff.count} changed pixels (pink on right)${index>=Math.min(a.numPages,b.numPages)?" · Page only exists in one file":""}`;
-          } catch(e) { status.textContent=(e as Error).message; } finally {rendering=false;if(closed)resolve();}
-        };
-        buttons(box,[{label:"Previous",onClick:()=>{if(!rendering){index=Math.max(0,index-1);void draw();}}},{label:"Next",onClick:()=>{if(!rendering){index=Math.min(Math.max(a.numPages,b.numPages)-1,index+1);void draw();}}},{label:"Close",onClick:()=>{closed=true;generation++;close();if(!rendering)resolve();}}]); void draw();
-      });
-    })));
   }
   async measure() {
     const o=await formDialog("Measure drawing","Click two or more points on the page. Scale is real-world units per PDF point; for a 1:100 drawing in millimetres use 35.2778.",[{key:"scale",label:"Units per PDF point",value:"1"},{key:"unit",label:"Unit",value:"pt"},{key:"mode",label:"Measurement",options:["Distance","Area"]}]); if(!o)return;

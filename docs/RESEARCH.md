@@ -109,7 +109,7 @@ Suggested next after the shop items, marked ★: they are used often, set a prof
 
 **Professional (office, legal, accounting, engineering)**
 
-7. ★ **Compare two PDFs:** show what changed between two versions of a contract or quote, side by side (split view is half of this).
+7. ✅ ★ **Compare two PDFs** (done: split view, pane B "Open other PDF…"; synced scrolling, word differences red/green incl. Thai/Chinese, picture compare for scans, next/previous difference): show what changed between two versions of a contract or quote, side by side (split view is half of this).
 8. ★ **Redact by search:** black out every phone number, ID card number, bank account or chosen word in one step (true redaction exists; this adds pattern search).
 9. ★ **Remove hidden information** before sending: author, editing history, comments, attachments, hidden layers.
 10. **Comments panel:** all comments in one list, reply, mark resolved, export.

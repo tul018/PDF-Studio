@@ -138,6 +138,11 @@ export class Viewer {
     for (const s of this.slots.values()) d.decorate(s);
   }
 
+  removeDecorator(d: Decorator): void {
+    this.decorators = this.decorators.filter((x) => x !== d);
+    for (const s of this.slots.values()) d.undecorate(s);
+  }
+
   get zoom(): number {
     return this.zoomValue;
   }

@@ -41,6 +41,7 @@ import { currentLanguage, initialLanguage, setLanguage } from "./ui/i18n";
 import { ocrPdf } from "./save/ocr";
 import { cutDialog, ocrDialog, protectDialog, photosDialog, settingsDialog, shrinkDialog, exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
 import { cutPages } from "./edit/cut";
+import { CompareView } from "./compare/compareView";
 import { forgetRecent, mapDocIds, newTab, recentFiles, rememberRecent, TabBar, type Tab, type TabSnapshot } from "./tabs";
 import { pagesToImages, shrinkInWorker, splitInWorker } from "./save/pages";
 import { splitParts } from "./save/split";
@@ -72,6 +73,8 @@ interface Pane {
   search: Search;
   bar: HTMLDivElement;
   searchTimer: number;
+  /** Pane B showing another PDF to compare with (split view). */
+  compare?: CompareView;
 }
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) =>
@@ -275,6 +278,7 @@ export class App {
       <span class="pane-zoom"></span>
       <button class="icon-btn" data-pane-act="zoomIn" title="Zoom in">${icon("zoomIn")}</button>
       <button class="icon-btn" data-pane-act="fit" title="Fit width">${icon("fitWidth")}</button>
+      <button class="btn small pane-other" data-pane-act="other" title="Show another PDF in this pane, to compare side by side">Open other PDF…</button>
       <button class="icon-btn pane-close" data-pane-act="close" title="Close this pane">${icon("close")}</button>`;
     const scroller = document.createElement("div");
     scroller.className = "viewer";
@@ -333,6 +337,7 @@ export class App {
       if (act === "zoomOut") viewer.setZoom(nextZoom(viewer.zoom, -1));
       if (act === "fit") viewer.setFit("width");
       if (act === "close") this.closePane(pane);
+      if (act === "other") void this.openOtherIn(pane);
     });
     for (const o of [overlay]) {
       o.tool = this.tool;
@@ -377,6 +382,7 @@ export class App {
 
   private closePane(p: Pane): void {
     if (this.panes.length < 2) return;
+    p.compare?.close();
     p.search.clear();
     clearTimeout(p.searchTimer);
     p.viewer.destroy();
@@ -606,7 +612,45 @@ export class App {
     this.updateChrome();
   }
 
+  /** Compare: split view with another PDF in pane B (opens split view if needed). */
+  async compareOther(): Promise<void> {
+    if (!this.mainDoc) return;
+    if (this.panes.length < 2) {
+      this.toggleSplit();
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    }
+    if (this.panes[1]) await this.openOtherIn(this.panes[1]);
+  }
+
+  private async openOtherIn(pane: Pane): Promise<void> {
+    const [source] = await this.platform.pickFiles(false);
+    if (!source) return;
+    pane.compare ??= new CompareView(
+      {
+        store: this.store,
+        profile: this.profile,
+        leftViewer: () => this.panes[0].viewer,
+        leftPages: () => this.history.state.pages,
+        askPassword: (name) => (reason) =>
+          promptText(reason === "incorrect" ? "Incorrect password — try again" : "Password required", "", {
+            password: true,
+            sub: `"${name}" is protected.`,
+            okLabel: "Unlock",
+          }),
+      },
+      pane.root,
+      pane.head,
+      pane.scroller,
+    );
+    try {
+      await pane.compare.open(source);
+    } catch (e) {
+      toast(`Could not open "${source.name}": ${(e as Error)?.message ?? e}`, "error", 6000);
+    }
+  }
+
   private async closeDocument(): Promise<void> {
+    for (const p of this.panes) p.compare?.close();
     this.reader.stop();
     for (const p of this.panes) {
       p.search.clear();
