@@ -4,7 +4,7 @@ import { LiveSession } from "./collaboration/live";
 import { advancedSettings } from "./professional/settings";
 import { checkUpdates, updateSettings } from "./platform/updates";
 import { getDocument, OPS } from "pdfjs-dist";
-import { cropViewport, CSS_UNITS, DocumentStore, pdfjsAssets, type LoadedDoc } from "./core/documents";
+import { cropViewport, CSS_UNITS, DocumentStore, pdfjsAssets, renderEngine, type LoadedDoc } from "./core/documents";
 import { getProfile, type DeviceProfile } from "./core/deviceProfile";
 import { nextZoom } from "./core/layout";
 import { FileSource, fileKeyOf, fileVersionOf, type PdfSource } from "./core/source";
@@ -903,6 +903,7 @@ export class App {
       viewMode: viewMode.value as ViewMode,
       night: document.body.classList.contains("night-pages"),
       readRate: this.reader.rate,
+      render: renderEngine(),
     });
     if (!v) return;
     if (v.reset) {
@@ -928,6 +929,16 @@ export class App {
     if (document.body.classList.contains("night-pages") !== v.night) this.action("nightPages");
     this.reader.rate = v.readRate;
     save("pdfstudio:readrate", String(v.readRate));
+    if (v.render !== renderEngine()) {
+      save("pdfstudio:render", v.render);
+      // Reopen the document so every canvas (and PDF.js' own) uses the new engine.
+      if (this.mainDoc) {
+        this.stashCurrent();
+        await this.closeDocument();
+        await this.switchTab(this.activeTab);
+      }
+      toast(v.render === "gpu" ? "Drawing pages with the graphics card (GPU)." : "Drawing pages with the processor (CPU).", "ok");
+    }
   }
 
   /** Pick photos/scans and make a new PDF of them (opens in a tab, unsaved). */

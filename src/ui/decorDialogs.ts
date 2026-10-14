@@ -623,6 +623,7 @@ export interface SettingsValues {
   viewMode: "continuous" | "single" | "spread";
   night: boolean;
   readRate: number;
+  render: "gpu" | "cpu";
 }
 
 export function settingsDialog(v: SettingsValues): Promise<(SettingsValues & { reset: boolean }) | null> {
@@ -658,6 +659,14 @@ export function settingsDialog(v: SettingsValues): Promise<(SettingsValues & { r
         String(v.readRate),
       );
       row(box, "Reading speed", rate);
+      const render = select(
+        [
+          ["gpu", "Graphics card (GPU)"],
+          ["cpu", "Processor (CPU)"],
+        ],
+        v.render,
+      );
+      row(box, "Rendering", render).title = "Graphics card: smoother, less CPU. Processor: if pages look wrong or the app is unstable on this PC.";
       let reset = false;
       const done = (ok: boolean) => {
         close();
@@ -668,6 +677,7 @@ export function settingsDialog(v: SettingsValues): Promise<(SettingsValues & { r
                 viewMode: view.value as SettingsValues["viewMode"],
                 night: night.checked,
                 readRate: Number(rate.value) || 1,
+                render: render.value as "gpu" | "cpu",
                 reset,
               }
             : null,

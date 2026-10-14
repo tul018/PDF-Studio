@@ -1,5 +1,5 @@
 import { AnnotationMode, TextLayer, type PDFPageProxy } from "pdfjs-dist";
-import { cropViewport, CSS_UNITS, type DocumentStore } from "../core/documents";
+import { cropViewport, CSS_UNITS, pageContext, type DocumentStore } from "../core/documents";
 import { degradeProfile, type DeviceProfile } from "../core/deviceProfile";
 import { clampRenderScale, clampZoom, PAGE_GAP, PageLayout } from "../core/layout";
 import { isAbort, RenderQueue } from "../core/renderQueue";
@@ -722,7 +722,7 @@ export class Viewer {
     canvas.className = "page-canvas";
     canvas.width = Math.max(1, Math.floor(crop.width));
     canvas.height = Math.max(1, Math.floor(crop.height));
-    const ctx = canvas.getContext("2d", { alpha: false });
+    const ctx = pageContext(canvas);
     if (!ctx || canvas.width === 0) return "oom";
     const task = page.render({
       canvas,
@@ -791,7 +791,7 @@ export class Viewer {
     canvas.className = "page-detail";
     canvas.width = Math.ceil((x1 - x0) * dpr);
     canvas.height = Math.ceil((y1 - y0) * dpr);
-    const ctx = canvas.getContext("2d", { alpha: false });
+    const ctx = pageContext(canvas);
     if (!ctx) return;
     const task = page.render({
       canvas,

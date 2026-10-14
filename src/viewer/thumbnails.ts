@@ -1,5 +1,5 @@
 import { AnnotationMode, type PDFPageProxy } from "pdfjs-dist";
-import { cropViewport, type DocumentStore } from "../core/documents";
+import { cropViewport, pageContext, type DocumentStore } from "../core/documents";
 import { PageLayout } from "../core/layout";
 import { WeightedLRU } from "../core/lru";
 import { isAbort, type RenderQueue } from "../core/renderQueue";
@@ -270,7 +270,7 @@ export class Thumbnails {
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(THUMB_W * this.dpr);
       canvas.height = Math.max(1, Math.round((canvas.width * drawn.height) / drawn.width));
-      const ctx = canvas.getContext("2d", { alpha: false });
+      const ctx = pageContext(canvas);
       if (ctx) {
         ctx.imageSmoothingQuality = "high";
         ctx.drawImage(drawn, 0, 0, canvas.width, canvas.height);
@@ -289,7 +289,7 @@ export class Thumbnails {
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(crop.width));
     canvas.height = Math.max(1, Math.round(crop.height));
-    const ctx = canvas.getContext("2d", { alpha: false });
+    const ctx = pageContext(canvas);
     if (!ctx) return;
     const task = page.render({
       canvas,

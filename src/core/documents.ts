@@ -20,6 +20,24 @@ const assetBase = new URL("pdfjs/", document.baseURI).href;
  * image decoders, colour profiles). Every getDocument() in the app needs
  * these, or non-embedded CJK fonts, JPEG2000 scans etc. come out wrong.
  */
+/**
+ * Where pages are drawn: "gpu" (graphics card, the default: smoother on big
+ * image pages, less CPU) or "cpu" (processor: for PCs whose graphics driver
+ * draws badly or crashes). Settings › Rendering.
+ */
+export type RenderEngine = "gpu" | "cpu";
+export function renderEngine(): RenderEngine {
+  try {
+    return localStorage.getItem("pdfstudio:render") === "cpu" ? "cpu" : "gpu";
+  } catch {
+    return "gpu";
+  }
+}
+/** A page canvas drawn by the chosen engine (willReadFrequently forces software drawing). */
+export function pageContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D | null {
+  return canvas.getContext("2d", { alpha: false, willReadFrequently: renderEngine() === "cpu" });
+}
+
 export const pdfjsAssets = {
   cMapUrl: assetBase + "cmaps/",
   cMapPacked: true,
@@ -94,7 +112,8 @@ export class DocumentStore {
       standardFontDataUrl: assetBase + "standard_fonts/",
       wasmUrl: assetBase + "wasm/",
       iccUrl: assetBase + "iccs/",
-      enableHWA: localStorage.getItem("pdfstudio:gpu") === "1",
+      // PDF.js' own working canvases follow the same choice.
+      enableHWA: renderEngine() === "gpu",
       enableXfa: false,
       useSystemFonts: true,
     } as Parameters<typeof getDocument>[0]);
