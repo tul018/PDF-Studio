@@ -36,11 +36,14 @@ Start/restart that MCP connection in Claude, then open **Connector** in PDF Stud
 
 Tool examples: “Read page 1”, “Find every occurrence of invoice”, “Show page 3”, “Add a comment on page 2”, “Fill the Customer field”, “Mark this rectangle for redaction”, “Save an extracted copy of pages 2 and 4”. Reads of existing source text do not automatically include unsaved annotation text; use annotation listing or page images for those.
 
-## Live collaboration without Cloudflare
+## Live collaboration (no server, no Cloudflare)
 
-Run `npm run collaboration`, open a PDF and choose **Live → Host current PDF**. Share the editor or view-only invitation with another app connected to the same relay. The host must remain connected. The relay stores only AES-GCM encrypted Yjs updates in memory; the document key is inside the invitation, so treat invitations as document access credentials. Rooms expire after four hours, at host disconnect, or on server restart. Save a local PDF to retain work. A live session starts from a flattened copy; later supported annotations/forms/pages synchronize. Local undo/redo uses Yjs ownership so it does not undo another editor's changes.
+Open a PDF and choose **Live → Host current PDF**. Your PDF Studio becomes the meeting point (a relay built into the app, `src-tauri/src/relay.rs`); nothing to install or run. Send the editor or view-only invitation (e.g. by LINE). The other person chooses **Live → Join session** and pastes it; their app tries your PC's network addresses, which the invitation carries.
 
-The default relay is loopback-only, suitable for multiple local app/browser sessions. For remote use, run `collaboration/server.mjs` behind a TLS reverse proxy using `HOST`/`PORT` environment variables. Set `VITE_COLLAB_URL` to its `wss://` address at build time and add that exact origin to the Tauri `connect-src` CSP. Secure a public deployment with access controls and request/rate limits; it is not deployed by this change. Cloudflare is one possible host, not a requirement. No live cursor/follow UI is included.
+- **Same network** (shop Wi-Fi, office): works directly. The first time you host, Windows asks whether PDF Studio may accept connections: allow **Private networks**.
+- **Different places**: install the free **Tailscale** app on both PCs (same Tailscale account or a shared device); the host's Tailscale address is in the invitation, so joining works the same way. No server, no Cloudflare, no cost.
+- Updates are encrypted end to end (AES-GCM); the key is only in the invitation, so treat invitations like a password to the document. Only the host's PC can start sessions; at most 10 people; sessions end when the host stops or after 4 hours. Save a local PDF to keep the work.
+- The host's PDF Studio must stay open. The browser build (development) still uses `npm run collaboration` as its relay.
 
 ## Engine and technical boundaries
 

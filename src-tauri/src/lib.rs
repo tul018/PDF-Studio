@@ -12,6 +12,19 @@ use percent_encoding::percent_decode_str;
 use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::Manager;
 
+mod relay;
+
+/// Host a live session: start the built-in relay; returns its port and this PC's addresses.
+#[tauri::command]
+async fn relay_start(state: tauri::State<'_, relay::RelayState>) -> Result<relay::RelayInfo, String> {
+    relay::start(&state).await
+}
+
+#[tauri::command]
+fn relay_stop(state: tauri::State<'_, relay::RelayState>) {
+    relay::stop(&state);
+}
+
 /// Upper bound for a single range read (PDF.js asks for 256 KiB chunks).
 const MAX_RANGE: u64 = 64 * 1024 * 1024;
 
@@ -215,6 +228,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .manage(relay::RelayState::default())
         .setup(|app| {
             #[cfg(desktop)]
             if app.config().plugins.0.contains_key("updater") {
@@ -233,7 +247,9 @@ pub fn run() {
             save_to_documents,
             initial_files,
             list_pdfs,
-            write_new_file
+            write_new_file,
+            relay_start,
+            relay_stop
         ])
         .run(tauri::generate_context!())
         .expect("error while running PDF Studio");
