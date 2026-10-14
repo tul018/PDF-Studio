@@ -53,8 +53,8 @@ On a Windows machine (or use the **Build apps** GitHub Actions workflow):
 
 ```bash
 npm run app:build
-# -> src-tauri/target/release/bundle/nsis/PDF Studio_0.1.0_x64-setup.exe
-# -> src-tauri/target/release/bundle/msi/PDF Studio_0.1.0_x64_en-US.msi
+# -> src-tauri/target/release/bundle/nsis/PDF Studio_0.2.1_x64-setup.exe
+# -> src-tauri/target/release/bundle/msi/PDF Studio_0.2.1_x64_en-US.msi
 ```
 
 The installer registers PDF Studio as a `.pdf` handler ("Open with"), and installs the WebView2 runtime if it is missing.
@@ -88,10 +88,21 @@ npm run ios:build                # release build (.ipa); set APPLE_DEVELOPMENT_T
 
 On macOS, use Cmd instead of Ctrl.
 
-## Planned features
+## Professional tools and integrations
 
-Label printing mode for shipping labels, search across a folder of PDFs, stamps and company seal, Thai/Chinese/English OCR, export pages as images, tabs, shrink PDF size, split into files, optional translation, and password protection on save. For general and professional users: make PDF from photos, Thai/Chinese menus, reading modes, read aloud, settings, auto-update, compare two PDFs, redact by search, remove hidden information, comments panel, create forms, headers/footers and Bates numbering, edit bookmarks, measuring tools, convert to Word/Excel and batch actions. AI assistant: Claude (later ChatGPT) controls PDF Studio through an MCP connector, using the existing Claude subscription. Future: work together live, QR code detection and GPU rendering. Details and order: [docs/RESEARCH.md › Planned features](docs/RESEARCH.md#planned-features-requested).
+Tools opens comparison, search redaction, sanitization, comments, forms, page numbering, bookmarks, measurement, Word/Excel text export, batch processing, QR codes, certificate signing, existing-text editing and archival export. Engine controls native annotations, incremental saving and optional hardware acceleration. Connector pairs with a local Claude MCP server; Live shares an encrypted session through a local or self-hosted relay.
+
+See [setup, validation and limitations](docs/PHASES-2-6.md). Automatic update hosting is deliberately unconfigured. Remote collaboration requires a hosted relay; no Cloudflare account is required for local use.
 
 ## Known limitations
 
-See the roadmap at the end of [docs/RESEARCH.md](docs/RESEARCH.md): OCR, certificate (PKI) signatures, password protection on save (protected PDFs can be opened, but an edited one is saved without its password), editing existing text, native annotations for every type, compression/PDF-A, incremental save, XFA forms, and optional AI features. Saving still loads the full file into memory (viewing never does). The app warns before saving very large files on iOS.
+Word/Excel export reconstructs text, not the original layout or tables. Existing-text editing supports standard Latin fonts, not arbitrary embedded fonts. Archival export is image-only. Signatures have no timestamp/LTV service. Live sessions are temporary and limited to 12 MB documents. Saving loads the full file into memory. iOS release signing and device validation require a Mac and developer credentials.
+## Professional tools and integrations
+
+Tools opens comparison, search redaction, sanitization, comments, forms, page numbering, bookmarks, measurement, Word/Excel text export, batch processing, QR codes, certificate signing, existing-text editing and archival export. Engine controls native annotations, incremental saving and optional hardware acceleration. Connector pairs with a local Claude MCP server; Live shares an encrypted session through a local or self-hosted relay.
+
+See [setup, validation and limitations](docs/PHASES-2-6.md). Automatic update hosting is deliberately unconfigured. Remote collaboration requires a hosted relay; no Cloudflare account is required for local use.
+
+## Known limitations
+
+Word/Excel export reconstructs text, not the original layout or tables. Existing-text editing supports standard Latin fonts, not arbitrary embedded fonts. Archival export is image-only. Signatures have no timestamp/LTV service. Live sessions are temporary and limited to 12 MB documents. Saving loads the full file into memory. iOS release signing and device validation require a Mac and developer credentials.

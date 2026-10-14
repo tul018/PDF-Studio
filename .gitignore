@@ -12,3 +12,9 @@ bench-results/
 tests/fixtures/catalogs/
 tests/fixtures/*.png
 public/tesseract/
+
+/src-tauri/updater.release.json
+*.p12
+*.pfx
+*.key
+connector/pairing-token.txt

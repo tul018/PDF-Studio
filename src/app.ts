@@ -1,3 +1,8 @@
+import { Workbench } from "./professional/workbench";
+import { Connector } from "./connector/client";
+import { LiveSession } from "./collaboration/live";
+import { advancedSettings } from "./professional/settings";
+import { checkUpdates, updateSettings } from "./platform/updates";
 import { getDocument, OPS } from "pdfjs-dist";
 import { cropViewport, CSS_UNITS, DocumentStore, pdfjsAssets, type LoadedDoc } from "./core/documents";
 import { getProfile, type DeviceProfile } from "./core/deviceProfile";
@@ -95,6 +100,9 @@ class MarkRibbons implements Decorator {
 }
 
 export class App {
+  readonly workbench = new Workbench(this);
+  readonly connector = new Connector(this);
+  readonly live = new LiveSession(this);
   readonly profile: DeviceProfile = getProfile();
   readonly platform = new Platform(this.profile.isIOS);
   readonly store = new DocumentStore();
@@ -202,6 +210,7 @@ export class App {
     this.folderPanel = new FolderPanel($('[data-panel="folder"]'), this.platform);
     this.folderPanel.onOpen = (source, pageIndex, query) => void this.openSearchResult(source, pageIndex, query);
     this.bindToolbar();
+    void checkUpdates(() => this.history.dirty || this.tabs.some(t => !!t.snapshot?.dirty));
     this.bindKeyboard();
     this.bindDragDrop();
     this.bindSidebarTabs();
@@ -1500,6 +1509,11 @@ export class App {
   }
 
   private action(a: string): void {
+    if (a === "professional") return this.workbench.menu();
+    if (a === "connector") return void this.connector.toggle();
+    if (a === "live") return void this.live.toggle();
+    if (a === "engineSettings") return void advancedSettings();
+    if (a === "updates") return void updateSettings(() => this.history.dirty || this.tabs.some(t => !!t.snapshot?.dirty));
     const v = this.activeViewer;
     switch (a) {
       case "open":

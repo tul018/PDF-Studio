@@ -7,6 +7,7 @@ import type { EditState } from "./model";
  * full serialized PDF per undo step and run out of memory on big files.
  */
 export class History {
+  externalUndo?: {canUndo:()=>boolean;canRedo:()=>boolean;undo:()=>void;redo:()=>void};
   private past: EditState[] = [];
   private future: EditState[] = [];
   private listeners = new Set<(s: EditState) => void>();
@@ -24,11 +25,11 @@ export class History {
   }
 
   get canUndo(): boolean {
-    return this.past.length > 0;
+    return this.externalUndo ? this.externalUndo.canUndo() : this.past.length > 0;
   }
 
   get canRedo(): boolean {
-    return this.future.length > 0;
+    return this.externalUndo ? this.externalUndo.canRedo() : this.future.length > 0;
   }
 
   get dirty(): boolean {
@@ -57,6 +58,7 @@ export class History {
   }
 
   undo(): void {
+    if (this.externalUndo) return this.externalUndo.undo();
     const prev = this.past.pop();
     if (!prev) return;
     this.future.push(this.current);
@@ -65,6 +67,7 @@ export class History {
   }
 
   redo(): void {
+    if (this.externalUndo) return this.externalUndo.redo();
     const next = this.future.pop();
     if (!next) return;
     this.past.push(this.current);

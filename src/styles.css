@@ -427,3 +427,9 @@ textarea.modal-input { height: 110px; padding: 8px; resize: vertical; }
   #print-root img { display: block; width: 100%; height: auto; page-break-after: always; break-after: page; }
   #print-root img:last-child { page-break-after: auto; break-after: auto; }
 }
+
+.pro-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.pro-field{display:flex;flex-direction:column;gap:4px;margin:10px 0}.pro-wide{width:min(1200px,96vw);max-width:96vw}.pro-scroll{max-height:60vh;overflow:auto}.pro-comment{padding:12px;border-bottom:1px solid #8884;white-space:pre-wrap}.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-height:65vh;overflow:auto}.compare-grid canvas,.measure-canvas{max-width:100%;height:auto}.measure-canvas{max-height:65vh;object-fit:contain;cursor:crosshair}.live-view-only .tool-bar,.live-view-only [data-action="professional"]{pointer-events:none;opacity:.5}
+
+/* Main actions wrap so integrations stay reachable on small windows. */
+.main-bar{height:auto;min-height:var(--bar-h);flex-wrap:wrap;justify-content:flex-start;padding-block:4px;row-gap:4px}
+.main-bar .group{flex:0 0 auto;max-width:100%;flex-wrap:wrap}

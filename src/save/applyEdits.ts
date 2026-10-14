@@ -1,3 +1,5 @@
+import { objectSnapshot, saveIncremental } from "../professional/incremental";
+import { nativeAnnotation } from "../professional/nativeAnnotations";
 import {
   BlendMode,
   degrees,
@@ -44,6 +46,8 @@ export interface PlanPage {
 }
 
 export interface SavePlan {
+  nativeAnnotations?: boolean;
+  incremental?: boolean;
   sources: Record<string, Uint8Array>;
   pages: PlanPage[];
   /** docId -> fieldName -> value */
@@ -58,7 +62,7 @@ export interface SavePlan {
 export type Progress = (done: number, total: number) => void;
 
 export async function applyEdits(plan: SavePlan, onProgress: Progress = () => {}): Promise<Uint8Array> {
-  const usedDocIds = [...new Set(plan.pages.map((p) => p.docId).filter((d): d is string => !!d))];
+  const usedDocIds = [...new Set(plan.pages.filter((p) => !p.raster).map((p) => p.docId).filter((d): d is string => !!d))];
   const src = new Map<string, PDFDocument>();
   for (const id of usedDocIds) {
     src.set(id, await PDFDocument.load(plan.sources[id], { updateMetadata: false }));
@@ -70,6 +74,7 @@ export async function applyEdits(plan: SavePlan, onProgress: Progress = () => {}
     plan.pages.length === only.getPageCount() &&
     plan.pages.every((p, i) => p.docId === usedDocIds[0] && p.srcIndex === i && !p.raster && !p.blank && !p.crop);
 
+  const snapshot = plan.incremental && identity && !plan.protect ? objectSnapshot(only!, plan.sources[usedDocIds[0]]) : undefined;
   let needAppearanceFallback = false;
   for (const [id, doc] of src) {
     const values = plan.formValues[id];
@@ -152,7 +157,10 @@ export async function applyEdits(plan: SavePlan, onProgress: Progress = () => {}
     if (p.rotation) page.setRotation(degrees((page.getRotation().angle + p.rotation) % 360));
     if (p.annotations.length) {
       if (p.docId && !p.raster) isolateExistingContent(out, page);
-      for (const a of p.annotations) await drawAnnotation(out, page, a, plan, fonts, images);
+      for (const a of p.annotations) {
+        if (plan.nativeAnnotations && await nativeAnnotation(out, page, a, temp => drawAnnotation(out, temp, a, plan, fonts, images))) continue;
+        await drawAnnotation(out, page, a, plan, fonts, images);
+      }
     }
     if (i % 25 === 0) onProgress(i, total);
   }
@@ -171,6 +179,10 @@ export async function applyEdits(plan: SavePlan, onProgress: Progress = () => {}
     return saveEncrypted(out, plan.protect);
   }
   try {
+    if (snapshot && !plan.pages.some(p => p.annotations.some(a => a.type === "redact" || a.type === "whiteout"))) {
+      if (out.catalog.get(PDFName.of("AcroForm"))) out.getForm().updateFieldAppearances();
+      return saveIncremental(plan.sources[usedDocIds[0]], out, snapshot);
+    }
     return await out.save({ useObjectStreams: true });
   } catch (e) {
     if (!needAppearanceFallback && !/WinAnsi|encode/i.test(String(e))) throw e;

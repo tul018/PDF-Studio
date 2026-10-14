@@ -1,6 +1,6 @@
 [package]
 name = "pdf-studio"
-version = "0.1.0"
+version = "0.2.1"
 description = "Fast, crash-resistant PDF viewer and editor"
 edition = "2021"
 rust-version = "1.77"
@@ -25,3 +25,6 @@ codegen-units = 1
 lto = true
 opt-level = 3
 strip = true
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-updater = "2"

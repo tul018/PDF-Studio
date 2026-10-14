@@ -108,7 +108,7 @@ fn save_to_documents(app: tauri::AppHandle, request: Request<'_>) -> Result<Stri
 }
 
 /// Kinds of file the app may create: PDFs and exported page images.
-const NEW_FILE_TYPES: [&str; 4] = ["pdf", "png", "jpg", "jpeg"];
+const NEW_FILE_TYPES: [&str; 7] = ["pdf", "png", "jpg", "jpeg", "docx", "xlsx", "json"];
 
 /// A new file named `name` in `dir`, never replacing an existing one
 /// ("name (1).pdf", "name (2).pdf"...). Path separators in the name are
@@ -215,6 +215,16 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            #[cfg(desktop)]
+            if app.config().plugins.0.contains_key("updater") {
+                // Updates are optional. An unconfigured/offline build must still open.
+                if let Err(error) = app.handle().plugin(tauri_plugin_updater::Builder::new().build()) {
+                    eprintln!("Automatic updates are unavailable: {error}");
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             file_info,
             read_range,

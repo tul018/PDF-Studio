@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openPdf, pageBox } from "./helpers";
+import { openPdf, pageBox, saveAndRead } from "./helpers";
 
-test.fixme("OCR makes a scan searchable", async ({ page }) => {
+test("OCR makes a scan searchable", async ({ page }) => {
   page.on("console", (m) => m.type() === "error" && console.log("CONSOLE:", m.text().slice(0, 300)));
   page.on("pageerror", (e) => console.log("PAGEERR:", e.message));
   test.setTimeout(180_000);
@@ -27,6 +27,16 @@ test.fixme("OCR makes a scan searchable", async ({ page }) => {
   await page.getByLabel("Thai").uncheck();
   await page.locator(".modal").getByRole("button", { name: "Recognize", exact: true }).click();
   await expect(page.locator(".tab.active")).toContainText("(searchable)", { timeout: 150_000 });
+  await page.keyboard.press("Control+f");
+  await page.fill(".pane.active .search-input", "quick brown");
+  await expect(page.locator(".pane.active .search-count")).toHaveText("1 of 1");
+  // Search must also work after the invisible text layer is saved and reopened.
+  await page.keyboard.press("Escape");
+  const bytes = await saveAndRead(page);
+  const reopen = page.waitForEvent("filechooser");
+  await page.locator('[data-action="open"]').first().click();
+  await (await reopen).setFiles({ name: "ocr-reopened.pdf", mimeType: "application/pdf", buffer: Buffer.from(bytes) });
+  await expect(page.locator(".tab.active")).toContainText("ocr-reopened");
   await page.keyboard.press("Control+f");
   await page.fill(".pane.active .search-input", "quick brown");
   await expect(page.locator(".pane.active .search-count")).toHaveText("1 of 1");

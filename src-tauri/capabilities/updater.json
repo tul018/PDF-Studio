@@ -1,0 +1,15 @@
+{
+  "identifier": "desktop-updater",
+  "description": "Signed desktop update installation",
+  "windows": [
+    "main"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "macOS"
+  ],
+  "permissions": [
+    "updater:default"
+  ]
+}

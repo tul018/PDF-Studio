@@ -89,7 +89,7 @@ export async function buildPdf(
     if (im) imgs[id] = { bytes: im.bytes.slice(), mime: im.mime };
   }
 
-  const plan: SavePlan = { sources, pages: planPages, formValues, images: imgs, textImages, protect: opts.protect };
+  const plan: SavePlan = { sources, pages: planPages, formValues, images: imgs, textImages, nativeAnnotations: localStorage.getItem("pdfstudio:nativeAnnotations") === "1", incremental: localStorage.getItem("pdfstudio:incremental") === "1", protect: opts.protect };
   progress("Writing PDF", 0);
   return runWorker(plan, transfer, (f) => progress("Writing PDF", f));
 }

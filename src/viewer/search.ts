@@ -169,7 +169,9 @@ export async function extractPageText(page: PDFPageProxy): Promise<PageText> {
     // Thai, Chinese and Japanese don't put spaces between words: PDFs often
     // split such text into many pieces (and lines), and a separator there
     // would make "你好" or a Thai word unfindable.
-    if (sep && !(NO_SPACE_SCRIPT.test(text.slice(-1)) && NO_SPACE_SCRIPT.test(s[0]))) text += sep;
+    // PDF.js can emit spaces as separate items (notably OCR text layers).
+    // Only synthesize a separator when neither adjacent item supplies one.
+    if (sep && !text.endsWith(" ") && !s.startsWith(" ") && !(NO_SPACE_SCRIPT.test(text.slice(-1)) && NO_SPACE_SCRIPT.test(s[0]))) text += " ";
     const [a, b, , , e, f] = it.transform;
     items.push(text.length, s.length, e, f, it.width ?? 0, it.height || Math.hypot(a, b) || 10, a, b);
     text += s;

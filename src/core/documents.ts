@@ -94,6 +94,7 @@ export class DocumentStore {
       standardFontDataUrl: assetBase + "standard_fonts/",
       wasmUrl: assetBase + "wasm/",
       iccUrl: assetBase + "iccs/",
+      enableHWA: localStorage.getItem("pdfstudio:gpu") === "1",
       enableXfa: false,
       useSystemFonts: true,
     } as Parameters<typeof getDocument>[0]);

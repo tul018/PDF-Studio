@@ -1,6 +1,6 @@
 {
   "name": "pdf-studio",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Fast, crash-resistant PDF viewer and editor for Windows and iOS (Tauri 2 + PDF.js + pdf-lib)",
   "scripts": {
     "assets": "node scripts/copy-pdfjs-assets.mjs",
@@ -19,7 +19,10 @@
     "ios:init": "tauri ios init",
     "ios:dev": "tauri ios dev",
     "ios:build": "tauri ios build",
-    "bench": "npm run fixtures && npm run build && playwright test --config playwright.bench.config.ts"
+    "bench": "npm run fixtures && npm run build && playwright test --config playwright.bench.config.ts",
+    "connector": "node connector/server.mjs",
+    "collaboration": "node collaboration/server.mjs",
+    "updates:prepare": "node scripts/prepare-updater.mjs"
   },
   "repository": {
     "type": "git",
@@ -30,21 +33,34 @@
   },
   "homepage": "https://github.com/tul018/PDF-viewer#readme",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@tauri-apps/api": "^2.12.3",
     "@tauri-apps/plugin-dialog": "^2.8.2",
     "@tauri-apps/plugin-opener": "^2.7.1",
+    "@tauri-apps/plugin-updater": "^2.13.3",
     "@tesseract.js-data/chi_sim": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
     "@tesseract.js-data/tha": "^1.0.0",
+    "docx": "^9.11.0",
+    "fflate": "^0.8.3",
+    "jsqr": "^1.4.0",
+    "node-forge": "^1.4.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.4.299",
+    "qrcode": "^1.5.4",
     "tesseract.js": "^7.0.0",
-    "tesseract.js-core": "^6.1.2"
+    "tesseract.js-core": "^6.1.2",
+    "ws": "^8.22.0",
+    "yjs": "^13.6.33",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@pdf-lib/fontkit": "^1.1.1",
     "@playwright/test": "^1.64.0",
     "@tauri-apps/cli": "^2.12.2",
+    "@types/node-forge": "^1.3.14",
+    "@types/qrcode": "^1.5.6",
+    "@types/ws": "^8.18.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.4"
