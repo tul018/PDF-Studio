@@ -22,7 +22,7 @@ test("Claude MCP pairs with PDF Studio and requires approval for edits",async({p
 test("encrypted live session shares a PDF and concurrent annotation changes",async({browser})=>{
   let relay:ChildProcess|undefined;const context=await browser.newContext();const host=await context.newPage(),guest=await context.newPage();
   try{relay=spawn(process.execPath,[join(process.cwd(),"collaboration/server.mjs")],{windowsHide:true});await new Promise<void>((resolve,reject)=>{relay!.stdout!.once("data",()=>resolve());relay!.once("error",reject);});
-    await host.goto("http://localhost:4173/");await openPdf(host,"basic.pdf");await cmd(host, '[data-action="live"]');await host.getByRole("button",{name:"Connect",exact:true}).click();
+    await host.goto("http://localhost:4173/");await openPdf(host,"basic.pdf");await cmd(host, '[data-action="live"]');await host.getByLabel("Session",{exact:true}).selectOption("Host on the same network");await host.getByRole("button",{name:"Connect",exact:true}).click();
     await expect(host.getByRole("dialog")).toContainText("Session is live");const code=await host.getByLabel("Editor invitation").inputValue();await host.getByRole("button",{name:"Close",exact:true}).click();
     await guest.goto("http://localhost:4173/");await cmd(guest, '[data-action="live"]');await guest.getByLabel("Session",{exact:true}).selectOption("Join session");await guest.getByLabel("Invitation code (to join)").fill(code);await guest.getByRole("button",{name:"Connect",exact:true}).click();await expect(guest.locator("body.has-doc")).toBeVisible();await expect(guest.locator(".tab.active")).toContainText("Live");
     for(const page of [host,guest]){await page.locator('[data-tool="rect"]').click();const box=await page.locator('.pane.active .page[data-page-number="1"]').boundingBox();await page.mouse.move(box!.x+100,box!.y+250);await page.mouse.down();await page.mouse.move(box!.x+220,box!.y+300);await page.mouse.up();}
@@ -30,4 +30,36 @@ test("encrypted live session shares a PDF and concurrent annotation changes",asy
     await host.keyboard.press("Control+z");await expect(host.locator(".pane.active .annot")).toHaveCount(1);await expect(guest.locator(".pane.active .annot")).toHaveCount(1);
     await host.keyboard.press("Control+y");await expect(host.locator(".pane.active .annot")).toHaveCount(2);await expect(guest.locator(".pane.active .annot")).toHaveCount(2);
   }finally{await context.close();relay?.kill();}
+});
+
+test("live over the internet: invitation and reply codes connect two apps directly, no relay",async({browser})=>{
+  const context=await browser.newContext();const host=await context.newPage(),guest=await context.newPage();
+  for(const p of [host,guest])p.on("pageerror",e=>console.log("PAGE ERROR:",e.message));
+  try{
+    await host.goto("http://localhost:4173/");await openPdf(host,"basic.pdf");
+    await cmd(host,'[data-action="live"]');await expect(host.getByLabel("Session",{exact:true})).toHaveValue("Host over the internet");
+    await host.getByRole("button",{name:"Connect",exact:true}).click();
+    await expect(host.getByRole("dialog")).toContainText("Invite people");
+    await host.getByRole("button",{name:"Invite an editor",exact:true}).click();
+    const invitation=await host.getByLabel("Invitation code to send").inputValue();
+    expect(invitation).toMatch(/^PS-[A-Za-z0-9_-]+$/);console.log("CODE LENGTHS invitation",invitation.length);
+    await guest.goto("http://localhost:4173/");await cmd(guest,'[data-action="live"]');
+    await guest.getByLabel("Session",{exact:true}).selectOption("Join session");await guest.getByLabel("Invitation code (to join)").fill(invitation);
+    await guest.getByRole("button",{name:"Connect",exact:true}).click();
+    await expect(guest.getByRole("dialog")).toContainText("Send this reply code to the host");
+    const reply=await guest.getByLabel("Reply code to send").inputValue();console.log("CODE LENGTHS reply",reply.length);expect(reply).toMatch(/^PS-/);
+    // Pasting the invitation back by mistake is explained.
+    await host.getByLabel("Reply code",{exact:true}).fill(invitation);await host.getByRole("button",{name:"Connect",exact:true}).click();
+    await expect(host.locator("#toast")).toContainText("That's an invitation code");
+    await host.getByLabel("Reply code",{exact:true}).fill(reply);await host.getByRole("button",{name:"Connect",exact:true}).click();
+    await expect(host.getByRole("dialog")).toContainText("1 person connected");
+    await expect(guest.locator("body.has-doc")).toBeVisible({timeout:30000});
+    await expect(guest.locator("#page-total")).toHaveText("/ 12");
+    await host.getByRole("button",{name:"Close",exact:true}).click();
+    for(const page of [host,guest]){await page.locator('[data-tool="rect"]').click();const box=await page.locator('.pane.active .page[data-page-number="1"]').boundingBox();await page.mouse.move(box!.x+100,box!.y+250);await page.mouse.down();await page.mouse.move(box!.x+220,box!.y+300);await page.mouse.up();}
+    await expect(host.locator(".pane.active .annot")).toHaveCount(2);await expect(guest.locator(".pane.active .annot")).toHaveCount(2);
+    // Host ends: the guest is told.
+    await cmd(host,'[data-action="live"]');await host.getByRole("button",{name:"End session",exact:true}).click();
+    await expect(guest.locator("#toast")).toContainText("The host ended this session");
+  }finally{await context.close();}
 });

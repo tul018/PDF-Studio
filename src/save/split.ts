@@ -55,3 +55,56 @@ export function splitParts(pageCount: number, how: { every: number } | { ranges:
   if (!parts.length) throw new Error("Type the page ranges, e.g. 1-3, 4-10, 11-");
   return parts;
 }
+
+/**
+ * Join whole PDFs, in order, into one (bookmarks, links and attachments of
+ * each are kept and point into the joined file). Password-protected files
+ * must be unlocked first: open one and use "Pages from other PDF…" instead.
+ */
+export async function mergePdfs(files: readonly { name: string; bytes: Uint8Array }[], onProgress: (done: number) => void = () => {}): Promise<Uint8Array> {
+  const out = await PDFDocument.create({ updateMetadata: false });
+  const sources: [string, PDFDocument][] = [];
+  const where = new Map<string, PDFRef>();
+  for (const [k, f] of files.entries()) {
+    let src: PDFDocument;
+    try {
+      src = await PDFDocument.load(f.bytes, { updateMetadata: false });
+    } catch (e) {
+      if (/encrypt/i.test(String((e as Error)?.message))) throw new Error(`"${f.name}" is password-protected. Open it, then add the other files with "Pages from other PDF…".`);
+      throw new Error(`"${f.name}" can't be read as a PDF.`);
+    }
+    const id = `d${k}`;
+    const indices = src.getPageIndices();
+    const copied = await out.copyPages(src, indices);
+    copied.forEach((p, i) => {
+      out.addPage(p);
+      where.set(`${id}|${indices[i]}`, p.ref);
+    });
+    sources.push([id, src]);
+    onProgress(k + 1);
+  }
+  const target = (docId: string, i: number) => where.get(`${docId}|${i}`);
+  for (const [id] of sources) for (const [key, ref] of where) if (key.startsWith(`${id}|`)) relinkPage(out, ref, id, target);
+  // One bookmark per merged file, named after it, so its pages stay findable.
+  copyDocumentStructure(out, sources, target, files.map((f) => f.name.replace(/\.pdf$/i, "")));
+  pruneUnreachable(out);
+  return out.save({ useObjectStreams: true });
+}
+
+/** Page numbers typed as ranges ("1-3, 7, 10-") -> 0-based indices in that order, each once. */
+export function parsePages(pageCount: number, text: string): number[] {
+  return [...new Set(splitParts(pageCount, { ranges: text }).flat())];
+}
+
+/** 0-based indices -> "1-3, 7, 10-12" (sorted). */
+export function rangesText(indices: Iterable<number>): string {
+  const s = [...new Set(indices)].sort((a, b) => a - b);
+  const out: string[] = [];
+  for (let i = 0; i < s.length; ) {
+    let j = i;
+    while (j + 1 < s.length && s[j + 1] === s[j] + 1) j++;
+    out.push(j > i ? `${s[i] + 1}-${s[j] + 1}` : `${s[i] + 1}`);
+    i = j + 1;
+  }
+  return out.join(", ");
+}

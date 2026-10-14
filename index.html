@@ -21,12 +21,13 @@
         <span id="page-total" class="page-total"></span>
         <button class="icon-btn" data-action="next" data-icon="next" title="Next page" data-needs-doc></button>
         <span class="sep hide-sm"></span>
-        <button class="icon-btn hide-sm" data-action="zoomOut" data-icon="zoomOut" title="Zoom out (Ctrl+-)" data-needs-doc></button>
         <select id="view-mode" aria-label="Page layout" title="Page layout" data-needs-doc>
           <option value="continuous">Scroll</option>
           <option value="single">One page</option>
           <option value="spread">Two pages</option>
         </select>
+        <span class="zoom-group">
+        <button class="icon-btn hide-sm" data-action="zoomOut" data-icon="zoomOut" title="Zoom out (Ctrl+-)" data-needs-doc></button>
         <select id="zoom-select" aria-label="Zoom" data-needs-doc>
           <option data-custom value="1">100%</option>
           <option value="width">Fit width</option>
@@ -41,11 +42,14 @@
           <option value="4">400%</option>
         </select>
         <button class="icon-btn hide-sm" data-action="zoomIn" data-icon="zoomIn" title="Zoom in (Ctrl++)" data-needs-doc></button>
+        </span>
       </div>
       <div class="group">
         <button class="icon-btn" data-action="search" data-icon="search" title="Find (Ctrl+F)" data-needs-doc></button>
         <button class="icon-btn" data-action="split" data-icon="split" title="Split view: compare (Ctrl+\)" data-needs-doc><span class="lbl">Split</span></button>
         <button class="icon-btn show-sm" data-action="tools" data-icon="ink" title="Edit tools" data-needs-doc></button>
+        <span class="sep"></span>
+        <button id="theme-btn" class="icon-btn" data-action="theme" title="Light / dark theme" aria-label="Light / dark theme"></button>
       </div>
     </header>
 
@@ -53,8 +57,14 @@
       <button class="tool" data-tool="select" data-icon="select" title="Select / text (V)" data-needs-doc><span>Select</span></button>
       <button class="tool" data-tool="hand" data-icon="hand" title="Pan (H)" data-needs-doc><span>Pan</span></button>
       <span class="sep"></span>
-      <button class="tool" data-tool="highlight" data-icon="highlight" title="Highlight (U) — or select text first" data-needs-doc><span>Highlight</span></button>
-      <button class="tool" data-tool="text" data-icon="text" title="Add text (T)" data-needs-doc><span>Text</span></button>
+      <span class="tool-split">
+        <button class="tool" data-tool="highlight" data-icon="highlight" title="Highlight (U) — or select text first" data-needs-doc><span>Highlight</span></button>
+        <button class="tool-caret" data-tool-menu="highlight" title="Highlight options" aria-label="Highlight options" aria-haspopup="dialog" aria-expanded="false" data-needs-doc></button>
+      </span>
+      <span class="tool-split">
+        <button class="tool" data-tool="text" data-icon="text" title="Add text (T)" data-needs-doc><span>Text</span></button>
+        <button class="tool-caret" data-tool-menu="text" title="Text options" aria-label="Text options" aria-haspopup="dialog" aria-expanded="false" data-needs-doc></button>
+      </span>
       <button class="tool" data-tool="ink" data-icon="ink" title="Draw (P)" data-needs-doc><span>Draw</span></button>
       <button class="tool" data-tool="rect" data-icon="rect" title="Rectangle (R)" data-needs-doc><span>Box</span></button>
       <button class="tool" data-tool="ellipse" data-icon="ellipse" title="Ellipse (O)" data-needs-doc><span>Circle</span></button>
@@ -68,13 +78,26 @@
       <button class="tool" data-action="watermark" data-icon="watermark" title="Watermark on every page" data-needs-doc><span>Watermark</span></button>
       <button class="tool" data-tool="whiteout" data-icon="whiteout" title="White-out (cover)" data-needs-doc><span>White-out</span></button>
       <button class="tool" data-tool="redact" data-icon="redact" title="Redact (permanently removes content under the box on save)" data-needs-doc><span>Redact</span></button>
-      <span class="sep"></span>
-      <label class="opt" title="Color"><input id="opt-color" type="color" value="#e53935" /></label>
-      <label class="opt" title="Line width">
-        <select id="opt-width"><option value="1">1 pt</option><option value="2" selected>2 pt</option><option value="3">3 pt</option><option value="5">5 pt</option><option value="8">8 pt</option></select>
+      <span class="sep opt-any"></span>
+      <label class="opt opt-any" title="Color"><input id="opt-color" type="color" value="#e53935" aria-label="Color" /></label>
+      <label class="opt opt-line" title="Line thickness">
+        <span class="opt-lbl">Line</span>
+        <select id="opt-width"><option value="0.5">0.5 pt</option><option value="1">1 pt</option><option value="2" selected>2 pt</option><option value="3">3 pt</option><option value="5">5 pt</option><option value="8">8 pt</option><option value="12">12 pt</option></select>
       </label>
-      <label class="opt" title="Font size">
-        <select id="opt-font"><option>10</option><option>12</option><option selected>14</option><option>18</option><option>24</option><option>32</option></select>
+      <label class="opt opt-text" title="Font">
+        <span class="opt-lbl">Font</span>
+        <select id="opt-family"><option value="sans">Sans</option><option value="serif">Serif</option><option value="mono">Mono</option></select>
+      </label>
+      <label class="opt opt-text" title="Font size: pick one or type any size">
+        <span class="opt-lbl">Size</span>
+        <input id="opt-font" class="opt-size" type="number" list="font-sizes" min="4" max="400" step="0.5" value="14" />
+        <span class="opt-lbl">pt</span>
+      </label>
+      <datalist id="font-sizes"><option value="8"></option><option value="9"></option><option value="10"></option><option value="11"></option><option value="12"></option><option value="14"></option><option value="16"></option><option value="18"></option><option value="20"></option><option value="24"></option><option value="28"></option><option value="32"></option><option value="36"></option><option value="48"></option><option value="72"></option></datalist>
+      <label class="opt opt-hl" title="Highlight opacity">
+        <span class="opt-lbl">Opacity</span>
+        <input id="opt-opacity" type="range" min="10" max="100" step="5" value="45" />
+        <span id="opt-opacity-val" class="opt-lbl">45%</span>
       </label>
       <button class="tool sel-only" data-action="deleteSel" data-icon="trash" title="Delete selected (Del)"><span>Delete</span></button>
     </div>
@@ -97,11 +120,11 @@
               <button class="icon-btn small" data-page-op="rotR" data-icon="rotR" title="Rotate right"></button>
               <button class="icon-btn small" data-page-op="up" data-icon="up" title="Move up"></button>
               <button class="icon-btn small" data-page-op="down" data-icon="down" title="Move down"></button>
+              <button class="icon-btn small" data-page-op="moveTo" data-icon="moveTo" title="Move to page… (type the page number)"></button>
               <button class="icon-btn small" data-page-op="blank" data-icon="plus" title="Insert blank page after current"></button>
               <button class="icon-btn small" data-page-op="merge" data-icon="merge" title="Add pages from other PDF(s)"></button>
-              <button class="icon-btn small" data-page-op="extract" data-icon="extract" title="Extract selected pages to a new PDF"></button>
+              <button class="icon-btn small" data-page-op="extract" data-icon="extract" title="Extract / split pages: chosen pages into one PDF, or split into several PDF files"></button>
               <button class="icon-btn small" data-page-op="cut" data-icon="cutPage" title="Cut pages into pieces (vertical / horizontal, by %)"></button>
-              <button class="icon-btn small" data-page-op="splitFiles" data-icon="scissors" title="Split into several PDF files"></button>
               <button class="icon-btn small" data-page-op="exportImages" data-icon="image" title="Export pages as images (PNG/JPG)"></button>
               <button class="icon-btn small danger" data-page-op="delete" data-icon="trash" title="Delete page(s)"></button>
             </div>

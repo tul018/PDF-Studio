@@ -167,7 +167,12 @@ export class DocumentStore {
     this.meta.clear();
     this.metaPending.clear();
     this.sizeQueue.clear();
-    await Promise.all(docs.map((d) => d.task.destroy().catch(() => {})));
+    // PDF.js can take very long to shut down a document whose file is still being
+    // read (a big or slow file, e.g. OneDrive). Don't make opening the next file
+    // wait for it: give it a moment, then let it finish in the background.
+    await Promise.all(
+      docs.map((d) => Promise.race([d.task.destroy().catch(() => {}), new Promise<void>((r) => setTimeout(r, 2000))])),
+    );
   }
 
   /** Page sizes became known: called with all pages loaded since the last call. */

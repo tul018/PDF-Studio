@@ -23,7 +23,8 @@ import {
   type PDFImage,
   type PDFPage,
 } from "pdf-lib";
-import { rotVec, textLines, type Annotation, type Box, type FormValue } from "../edit/model";
+import fontkit from "@pdf-lib/fontkit";
+import { rotVec, textLines, type Annotation, type Box, type FormValue, type TextFont } from "../edit/model";
 import { saveEncrypted, type Protection } from "./encrypt";
 import { copyDocumentStructure, detachPageLinks, pruneUnreachable, relinkPage, type PageTarget } from "./structure";
 
@@ -55,6 +56,10 @@ export interface SavePlan {
   images: Record<string, { bytes: Uint8Array; mime: string }>;
   /** Annotation id -> pre-rendered PNG for text the standard font can't encode (Thai, CJK, emoji...). */
   textImages: Record<string, Uint8Array>;
+  /** docId -> file name without .pdf (for per-file bookmarks when pages come from several files). */
+  sourceNames?: Record<string, string>;
+  /** Installed font family -> its font file, embedded (subset) for text set in it. */
+  fontFiles?: Record<string, Uint8Array>;
   /** Save with a password (AES-256). */
   protect?: Protection;
 }
@@ -139,10 +144,13 @@ export async function applyEdits(plan: SavePlan, onProgress: Progress = () => {}
     plan.pages.forEach((p, i) => {
       if (p.docId && !p.raster) relinkPage(out, out.getPage(i).ref, p.docId, target);
     });
-    copyDocumentStructure(out, [...src], target);
+    // Pages from several files: a bookmark per file shows where each one's pages are.
+    const ids = [...src.keys()];
+    const sections = ids.length > 1 && plan.sourceNames ? ids.map((id) => plan.sourceNames![id] ?? id) : undefined;
+    copyDocumentStructure(out, [...src], target, sections);
   }
 
-  const fonts = new FontCache(out);
+  const fonts = new FontCache(out, plan.fontFiles);
   const images = new Map<string, PDFImage>();
   const total = plan.pages.length;
   for (let i = 0; i < total; i++) {
@@ -242,12 +250,45 @@ function isolateExistingContent(doc: PDFDocument, page: PDFPage): void {
   page.node.wrapContentStreams(start, end);
 }
 
+const STANDARD_FONTS: Record<string, StandardFonts> = {
+  sans: StandardFonts.Helvetica,
+  serif: StandardFonts.TimesRoman,
+  mono: StandardFonts.Courier,
+};
+
 class FontCache {
-  private helv: PDFFont | null = null;
-  constructor(private doc: PDFDocument) {}
-  async helvetica(): Promise<PDFFont> {
-    if (!this.helv) this.helv = await this.doc.embedFont(StandardFonts.Helvetica);
-    return this.helv;
+  private fonts = new Map<StandardFonts, PDFFont>();
+  private embedded = new Map<string, PDFFont | null>();
+  constructor(
+    private doc: PDFDocument,
+    private files: Record<string, Uint8Array> = {},
+  ) {}
+  helvetica(): Promise<PDFFont> {
+    return this.standard(StandardFonts.Helvetica);
+  }
+  /** The PDF font for a text box; null for an installed font whose file couldn't be embedded. */
+  async forText(font: TextFont | undefined): Promise<PDFFont | null> {
+    const std = STANDARD_FONTS[font ?? "sans"];
+    if (std) return this.standard(std);
+    if (!this.embedded.has(font!)) {
+      let f: PDFFont | null = null;
+      const bytes = this.files[font!];
+      if (bytes) {
+        try {
+          this.doc.registerFontkit(fontkit);
+          f = await this.doc.embedFont(bytes, { subset: true });
+        } catch {
+          f = null; // e.g. a font collection (.ttc): the text is drawn as a picture instead
+        }
+      }
+      this.embedded.set(font!, f);
+    }
+    return this.embedded.get(font!)!;
+  }
+  private async standard(name: StandardFonts): Promise<PDFFont> {
+    let f = this.fonts.get(name);
+    if (!f) this.fonts.set(name, (f = await this.doc.embedFont(name)));
+    return f;
   }
 }
 
@@ -368,12 +409,13 @@ async function drawAnnotation(
       return;
     }
     case "text": {
-      const helv = await fonts.helvetica();
-      if (canEncode(helv, a.text)) {
+      const font = await fonts.forText(a.font);
+      // Thai and Chinese need shaping pdf-lib can't do: those use the picture.
+      if (font && !/[^\n\x20-\x7e\xa0-\xff]/.test(a.text) && canEncode(font, a.text)) {
         for (const l of textLines(a)) {
           if (!l.text) continue;
           const { x, y } = corner(a.box, 2, a.box.h - l.baseline - 2);
-          page.drawText(l.text, { x, y, size: a.fontSize, font: helv, color: hexToRgb(a.color), rotate: degrees(a.box.rot) });
+          page.drawText(l.text, { x, y, size: a.fontSize, font, color: hexToRgb(a.color), rotate: degrees(a.box.rot) });
         }
       } else {
         const png = plan.textImages[a.id];

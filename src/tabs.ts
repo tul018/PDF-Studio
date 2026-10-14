@@ -64,7 +64,8 @@ export class TabBar {
   }
 
   render(tabs: readonly Tab[], active: number, activeDirty: boolean): void {
-    document.body.classList.toggle("has-tabs", tabs.length > 1);
+    // Shown from the first file on, so even a single file has its × (back to the start screen).
+    document.body.classList.toggle("has-tabs", tabs.length > 0);
     const items = tabs.map((t, i) => {
       const b = document.createElement("div");
       b.className = "tab" + (i === active ? " active" : "");

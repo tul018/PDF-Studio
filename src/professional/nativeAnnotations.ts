@@ -20,6 +20,6 @@ export async function nativeAnnotation(doc: PDFDocument, page: PDFPage, a: Annot
   if(a.type==="ink")data.InkList=[a.points];
   if(a.type==="line"||a.type==="arrow"){data.L=[a.x1,a.y1,a.x2,a.y2];data.LE=["None",a.type==="arrow"?"OpenArrow":"None"];}
   if(a.type==="highlight"){const b=a.box;const points=[[0,b.h],[b.w,b.h],[0,0],[b.w,0]].flatMap(([x,y])=>{const v=rotVec(b.rot,x,y);return[b.x+v[0],b.y+v[1]];});data.QuadPoints=points;}
-  if(a.type==="text")data.DA=PDFHexString.fromText(`0 g /Helv ${a.fontSize} Tf`);
+  if(a.type==="text")data.DA=PDFHexString.fromText(`0 g /${({serif:"TiRo",mono:"Cour"} as Record<string,string>)[a.font??""]??"Helv"} ${a.fontSize} Tf`);
   page.node.addAnnot(doc.context.register(doc.context.obj(data)));return true;
 }

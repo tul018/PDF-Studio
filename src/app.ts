@@ -3,8 +3,7 @@ import { Connector } from "./connector/client";
 import { LiveSession } from "./collaboration/live";
 import { advancedSettings } from "./professional/settings";
 import { checkUpdates, updateSettings } from "./platform/updates";
-import { getDocument, OPS } from "pdfjs-dist";
-import { cropViewport, CSS_UNITS, DocumentStore, pdfjsAssets, renderEngine, type LoadedDoc } from "./core/documents";
+import { cropViewport, CSS_UNITS, DocumentStore, renderEngine, type LoadedDoc } from "./core/documents";
 import { getProfile, type DeviceProfile } from "./core/deviceProfile";
 import { nextZoom } from "./core/layout";
 import { FileSource, fileKeyOf, fileVersionOf, type PdfSource } from "./core/source";
@@ -39,17 +38,16 @@ import { imagesToPdf } from "./save/fromImages";
 import { BytesSource } from "./core/source";
 import { currentLanguage, initialLanguage, setLanguage } from "./ui/i18n";
 import { buildMenuBar, type MenuItem } from "./ui/menubar";
+import { ToolOptionsUI } from "./ui/toolOptions";
 import { ocrPdf } from "./save/ocr";
 import { aboutDialog, shortcutsDialog } from "./ui/decorDialogs";
-import { cutDialog, ocrDialog, protectDialog, photosDialog, settingsDialog, shrinkDialog, exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
+import { cutDialog, ocrDialog, protectDialog, photosDialog, settingsDialog, shrinkDialog, exportImagesDialog, pageNumbersDialog, extractDialog, mergeDialog, stampDialog, type ExtractMode, type PageChoice, watermarkDialog } from "./ui/decorDialogs";
 import { cutPages } from "./edit/cut";
 import { CompareView } from "./compare/compareView";
 import { forgetRecent, mapDocIds, newTab, recentFiles, rememberRecent, TabBar, type Tab, type TabSnapshot } from "./tabs";
 import { pagesToImages, shrinkInWorker, splitInWorker } from "./save/pages";
-import { splitParts } from "./save/split";
+import { mergePdfs, parsePages, rangesText, splitParts } from "./save/split";
 import { clearDraft, loadDraft, saveDraft } from "./edit/recovery";
-import { labelDialog } from "./labels/labelDialog";
-import { buildLabelPdf } from "./labels/labels";
 import { NativeSource, Platform } from "./platform/platform";
 import { buildPdf } from "./save/saver";
 import { choiceDialog, confirmDialog, progressOverlay, promptText, signaturePad, toast } from "./ui/dialogs";
@@ -142,6 +140,7 @@ export class App {
   private draftTimer = 0;
   private viewSaveTimer = 0;
   private tool: Tool = "select";
+  private toolOpts?: ToolOptionsUI;
 
   constructor() {
     buildMenuBar($(".main-bar"), (name) => (name === "recent" ? this.recentMenu() : []));
@@ -310,6 +309,7 @@ export class App {
     overlay.onSelectionChange = (a) => {
       if (a) for (const p of this.panes) if (p !== pane) p.overlay.select(null);
       document.body.classList.toggle("has-selection", !!a);
+      this.toolOpts?.sync();
     };
     forms.onLink = (url) => void this.platform.openExternal(url);
     forms.onGoto = (docId, index) => {
@@ -411,17 +411,35 @@ export class App {
    * is; a file that is already open in a tab is switched to instead.
    * "merge": add their pages to the open document.
    */
-  async openSources(sources: PdfSource[], mode: "replace" | "merge" = "replace"): Promise<void> {
+  /**
+   * Opening, switching and closing files run one at a time. Overlapping them
+   * (a click on another tab while a slow file is still loading) used to mix
+   * up which tab held which file, leaving a tab stuck with nothing loaded.
+   */
+  private docQueue: Promise<unknown> = Promise.resolve();
+  private exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.docQueue.then(fn, fn);
+    this.docQueue = run.catch(() => {});
+    return run;
+  }
+
+  openSources(sources: PdfSource[], mode: "replace" | "merge" = "replace"): Promise<void> {
+    return this.exclusive(() => this.openSourcesNow(sources, mode));
+  }
+
+  private async openSourcesNow(sources: PdfSource[], mode: "replace" | "merge" = "replace"): Promise<void> {
+    if (!sources.length) return;
     if (mode === "replace") {
       const key = fileKeyOf(sources[0]);
       const already = this.tabs.findIndex((t) => t.sources[0] && fileKeyOf(t.sources[0]) === key);
       if (already >= 0 && sources.length === 1) {
         // Reopened after saving over it: load the new version into its own tab.
         if (already === this.activeTab && !this.mainDoc) return this.loadIntoTab(sources, null);
-        if (already !== this.activeTab) await this.switchTab(already);
+        if (already !== this.activeTab) await this.switchTabNow(already);
         return;
       }
-      if (this.mainDoc) {
+      if (this.mainDoc || (this.activeTab >= 0 && this.tabs[this.activeTab]?.snapshot)) {
+        // A new tab; the open one (or one that failed to load, with its edits) stays as it is.
         this.stashCurrent();
         this.tabs.push(newTab(sources));
         this.activeTab = this.tabs.length - 1;
@@ -441,6 +459,7 @@ export class App {
     if (!tab || !this.mainDoc) return;
     for (const p of this.panes) p.overlay.commitTextEdit();
     const ids = [...this.store.docs.keys()];
+    if (!ids.length) return;
     tab.sources = ids.map((id) => this.store.docs.get(id)!.source);
     const pos = this.activeViewer.position();
     tab.snapshot = {
@@ -453,7 +472,15 @@ export class App {
     this.images.clear(); // keep their blob URLs alive for the snapshot
   }
 
-  async switchTab(i: number): Promise<void> {
+  /** Tab clicked: several quick clicks load only the last one. */
+  private wantTab = -1;
+  switchTab(i: number): Promise<void> {
+    this.wantTab = i;
+    const tab = this.tabs[i];
+    return this.exclusive(() => (this.tabs[this.wantTab] === tab ? this.switchTabNow(this.wantTab) : Promise.resolve()));
+  }
+
+  private async switchTabNow(i: number): Promise<void> {
     if (i < 0 || i >= this.tabs.length) return;
     if (i === this.activeTab && this.mainDoc) return;
     this.stashCurrent();
@@ -461,20 +488,27 @@ export class App {
     this.activeTab = i;
     const tab = this.tabs[i];
     const snap = tab.snapshot;
-    tab.snapshot = null;
     await this.loadIntoTab(tab.sources, snap);
+    // Loaded: the snapshot now lives in the open document. (If loading failed it stays,
+    // so the tab keeps its edits and can be tried again.)
+    if (this.mainDoc) tab.snapshot = null;
+    this.renderTabs();
   }
 
-  async closeTab(i: number): Promise<void> {
+  closeTab(i: number): Promise<void> {
+    return this.exclusive(() => this.closeTabNow(i));
+  }
+
+  private async closeTabNow(i: number): Promise<void> {
     const tab = this.tabs[i];
     if (!tab) return;
     const name = tab.sources[0]?.name ?? "this file";
-    if (i === this.activeTab && this.history.dirty) {
+    if (i === this.activeTab && this.mainDoc && this.history.dirty) {
       const c = await choiceDialog("Unsaved changes", `Save your changes to "${name}" before closing it?`, ["Cancel", "Discard", "Save"]);
       if (c === 0) return;
       if (c === 2 && !(await this.save(false))) return;
       void clearDraft(this.fileKey);
-    } else if (i !== this.activeTab && tab.snapshot?.dirty) {
+    } else if ((i !== this.activeTab || !this.mainDoc) && tab.snapshot?.dirty) {
       if (!(await confirmDialog("Discard changes?", `"${name}" has unsaved changes. Close it and lose them?`, "Discard and close"))) return;
     }
     if (i === this.activeTab) await this.closeDocument();
@@ -483,7 +517,7 @@ export class App {
     if (i < this.activeTab) this.activeTab--;
     else if (i === this.activeTab) {
       this.activeTab = -1;
-      if (this.tabs.length) return this.switchTab(Math.min(i, this.tabs.length - 1));
+      if (this.tabs.length) return this.switchTabNow(Math.min(i, this.tabs.length - 1));
     }
     this.renderTabs();
     this.updateChrome();
@@ -531,6 +565,10 @@ export class App {
 
   private async loadIntoTab(sources: PdfSource[], restore: TabSnapshot | null, mode: "replace" | "merge" = "replace"): Promise<void> {
     const tab = this.tabs[this.activeTab];
+    if (!sources.length) {
+      toast("This tab has no file to open. Close it and open the file again.", "error", 8000);
+      return this.updateChrome();
+    }
     const busy = progressOverlay(`Opening ${sources[0].name}…`);
     try {
       const loaded: LoadedDoc[] = [];
@@ -818,54 +856,6 @@ export class App {
     }
   }
 
-  /** Label printing mode: shipping labels cut out onto label-stock pages (see labels/labels.ts). */
-  async printLabels(): Promise<void> {
-    if (!this.mainDoc) return;
-    for (const p of this.panes) p.overlay.commitTextEdit();
-    const choice = await labelDialog();
-    if (!choice) return;
-    const { options } = choice;
-    const busy = progressOverlay("Finding labels…");
-    try {
-      // The edited document, exactly as Save would write it (annotations, stamps, page changes).
-      const bytes = await buildPdf(this.history.state, this.store, this.images, {
-        onProgress: (_l, f) => busy.update("Preparing…", f * 0.2),
-      });
-      // pdf.js may take over the buffer it is given: pass it a copy.
-      const task = getDocument({ data: bytes.slice(), ...pdfjsAssets } as Parameters<typeof getDocument>[0]);
-      let result: { bytes: Uint8Array; count: number };
-      try {
-        result = await buildLabelPdf(bytes, await task.promise, options, OPS, (f) => busy.update("Making labels…", 0.2 + f * 0.4));
-      } finally {
-        await task.destroy();
-      }
-      if (!result.count) {
-        busy.close();
-        toast("No labels found on these pages. Try another layout.", "error", 6000);
-        return;
-      }
-      if (choice.action === "save") {
-        busy.close();
-        const name = `${this.mainDoc.source.name.replace(/\.pdf$/i, "")} (labels).pdf`;
-        const res = await this.platform.save(result.bytes, name, undefined, true);
-        if (res) toast(`Saved ${result.count} label${result.count === 1 ? "" : "s"} to ${res.name}`, "ok", 4500);
-        return;
-      }
-      // Lossless, at the printer's own resolution, on paper the size of the stock.
-      await printPdf(result.bytes, (f) => busy.update("Rendering labels for the printer…", 0.6 + f * 0.4), new AbortController().signal, {
-        dpi: options.printerDpi,
-        format: "png",
-        pageMm: options.stockMm,
-      });
-      toast(`${result.count} label${result.count === 1 ? "" : "s"} sent to the printer. Choose the label printer and its ${options.stockMm.width} × ${options.stockMm.height} mm paper, at 100% scale.`, "ok", 8000);
-    } catch (e) {
-      console.error(e);
-      toast(`Labels failed: ${(e as Error)?.message ?? e}`, "error", 8000);
-    } finally {
-      busy.close();
-    }
-  }
-
   /** OCR: a searchable copy (invisible text over scanned pages), opened in a new tab. */
   async recognizeText(): Promise<void> {
     if (!this.mainDoc) return;
@@ -873,8 +863,7 @@ export class App {
     const sel = this.thumbs.selected;
     const o = await ocrDialog(sel.size, s.pages.length);
     if (!o) return;
-    const pages =
-      o.pages === "all" ? s.pages.map((_, i) => i) : o.pages === "selected" ? s.pages.flatMap((p, i) => (sel.has(p.id) ? [i] : [])) : [this.activeViewer.currentIndex];
+    const pages = this.pageIndices(o);
     const busy = progressOverlay("Preparing…");
     try {
       const bytes = await buildPdf(s, this.store, this.images, { onProgress: (_l, f) => busy.update("Preparing…", f * 0.1) });
@@ -929,7 +918,7 @@ export class App {
     if (v.reset) {
       // Remembered choices (dialogs, layout, language...) - not documents, marks or recent files.
       for (const k of Object.keys(localStorage)) {
-        if (/^pdfstudio:(labels|stamp-dialog|page-numbers|watermark|export-images|split|cut|photos|shrink|folder|viewmode|night|lang|readrate|sidebar|theme)$/.test(k)) localStorage.removeItem(k);
+        if (/^pdfstudio:(labels|stamp-dialog|page-numbers|watermark|export-images|split|cut|photos|shrink|folder|viewmode|night|lang|readrate|sidebar|theme|toolopts)$/.test(k)) localStorage.removeItem(k);
       }
       return toast("Remembered choices were reset.", "ok");
     }
@@ -953,9 +942,11 @@ export class App {
       save("pdfstudio:render", v.render);
       // Reopen the document so every canvas (and PDF.js' own) uses the new engine.
       if (this.mainDoc) {
-        this.stashCurrent();
-        await this.closeDocument();
-        await this.switchTab(this.activeTab);
+        await this.exclusive(async () => {
+          this.stashCurrent();
+          await this.closeDocument();
+          await this.switchTabNow(this.activeTab);
+        });
       }
       toast(v.render === "gpu" ? "Drawing pages with the graphics card (GPU)." : "Drawing pages with the processor (CPU).", "ok");
     }
@@ -1020,23 +1011,102 @@ export class App {
     }
   }
 
-  async extractSelected(): Promise<void> {
-    const pages = this.selectedPages();
-    if (!pages.length || !this.mainDoc) return;
-    const busy = progressOverlay("Extracting pages…");
+  /**
+   * Extract / split pages, one dialog for both: chosen pages into one new PDF,
+   * each range as its own PDF, or every N pages as its own PDF.
+   */
+  async extractPages(mode?: ExtractMode): Promise<void> {
+    if (!this.mainDoc) return;
+    const s = this.history.state;
+    const total = s.pages.length;
+    const sel = this.thumbs.selected;
+    const chosen = sel.size ? s.pages.flatMap((p, i) => (sel.has(p.id) ? [i] : [])) : [this.activeViewer.currentIndex];
+    const choice = await extractDialog(total, { mode, pages: sel.size || mode === "one" ? rangesText(chosen) : undefined }, (how) => splitParts(total, how));
+    if (!choice) return;
+    const { base, folder } = this.outputBase();
+    const busy = progressOverlay("Preparing…");
     try {
-      const bytes = await buildPdf(this.history.state, this.store, this.images, {
-        pages,
-        onProgress: (l, f) => busy.update(l, f),
-      });
+      if (choice.oneFile) {
+        const pages = choice.parts[0].map((i) => s.pages[i]);
+        const bytes = await buildPdf(s, this.store, this.images, { pages, onProgress: (l, f) => busy.update(l, f) });
+        busy.close();
+        const res = await this.platform.save(bytes, `${base} (pages ${rangesText(choice.parts[0])}).pdf`, undefined, true);
+        if (res) toast(`Saved ${pages.length} page${pages.length === 1 ? "" : "s"} to ${res.name}`, "ok");
+        return;
+      }
+      const parts = choice.parts;
+      const bytes = await buildPdf(s, this.store, this.images, { onProgress: (_l, f) => busy.update("Preparing…", f * 0.4) });
+      const outs = await splitInWorker(bytes, parts, (f) => busy.update("Splitting…", 0.4 + f * 0.5));
+      const label = (p: number[]) => (p.length === 1 ? `p${p[0] + 1}` : `p${p[0] + 1}-${p[p.length - 1] + 1}`);
+      async function* files() {
+        for (const [k, b] of outs.entries()) yield { name: `${base} ${label(parts[k])}.pdf`, bytes: b, mime: "application/pdf" };
+      }
       busy.close();
-      const base = this.mainDoc.source.name.replace(/\.pdf$/i, "");
-      const res = await this.platform.save(bytes, `${base} (pages).pdf`, undefined, true);
-      if (res) toast(`Extracted ${pages.length} page(s) to ${res.name}`, "ok");
+      const res = await this.platform.saveMany(files(), folder);
+      if (res) toast(`Saved ${res.count} PDF file${res.count === 1 ? "" : "s"}${res.folder ? ` to ${res.folder}` : ""}.`, "ok", 5000);
     } catch (e) {
+      console.error(e);
+      toast(`Couldn't save the pages: ${(e as Error)?.message ?? e}`, "error", 8000);
+    } finally {
       busy.close();
-      toast(`Extract failed: ${(e as Error).message}`, "error");
     }
+  }
+
+  /** Merge PDFs: pick files, put them in order, get one new PDF (opens in a tab, unsaved). */
+  async mergeFiles(): Promise<void> {
+    const files = await this.platform.pickFiles(true);
+    if (!files.length) return;
+    if (files.length === 1) return toast("Choose two or more PDF files to merge (hold Ctrl to pick several).", "info", 6000);
+    const order = await mergeDialog(files.map((f) => f.name));
+    if (!order) return;
+    const busy = progressOverlay("Merging…");
+    try {
+      const inputs = [];
+      for (const [k, i] of order.entries()) {
+        busy.update(`Reading ${files[i].name}…`, (k / order.length) * 0.4);
+        inputs.push({ name: files[i].name, bytes: await files[i].readAll() });
+      }
+      const bytes = await mergePdfs(inputs, (n) => busy.update("Merging…", 0.4 + (n / inputs.length) * 0.6));
+      busy.close();
+      const name = `${files[order[0]].name.replace(/\.pdf$/i, "")} (merged).pdf`;
+      await this.openSources([new BytesSource(name, bytes)]);
+      toast(`Merged ${order.length} files into one PDF. Save it with Ctrl+S.`, "ok", 6000);
+    } catch (e) {
+      console.error(e);
+      toast(`Merge failed: ${(e as Error)?.message ?? e}`, "error", 10000);
+    } finally {
+      busy.close();
+    }
+  }
+
+  /** 0-based page indices for a "which pages" choice (current / selected / all / typed ranges). */
+  private pageIndices(c: { pages: PageChoice; ranges?: string }): number[] {
+    const s = this.history.state;
+    if (c.pages === "all") return s.pages.map((_, i) => i);
+    if (c.pages === "selected") return s.pages.flatMap((p, i) => (this.thumbs.selected.has(p.id) ? [i] : []));
+    if (c.pages === "range") return parsePages(s.pages.length, c.ranges ?? "");
+    return [this.activeViewer.currentIndex];
+  }
+
+  /** Move the selected (or current) pages so they start at a page number you type. */
+  private async movePagesTo(): Promise<void> {
+    const s = this.history.state;
+    const pages = this.selectedPages();
+    if (!pages.length) return;
+    const ids = new Set(pages.map((p) => p.id));
+    const n = s.pages.length;
+    const what = pages.length === 1 ? `page ${s.pages.indexOf(pages[0]) + 1}` : `${pages.length} pages`;
+    const answer = await promptText(`Move ${what} to page`, "", {
+      sub: `Type 1 to move to the start, ${n - pages.length + 1} for the end.`,
+      placeholder: `1–${n - pages.length + 1}`,
+      okLabel: "Move",
+    });
+    if (answer === null) return;
+    const to = Math.round(Number(answer.trim()));
+    if (!Number.isFinite(to) || to < 1 || to > n - pages.length + 1) return toast(`Type a page number from 1 to ${n - pages.length + 1}.`, "error");
+    this.history.push(movePages(s, ids, to - 1));
+    this.activeViewer.scrollToPage(to - 1);
+    toast(`Moved ${what} to page ${to}. Undo with Ctrl+Z.`, "ok");
   }
 
   /** File name without .pdf, and the folder of the open file (desktop), for multi-file saves. */
@@ -1053,8 +1123,7 @@ export class App {
     const choice = await cutDialog(sel.size, this.history.state.pages.length, (canvas) => this.renderPreview(current, canvas, 300));
     if (!choice) return;
     const s = this.history.state;
-    const refs =
-      choice.pages === "all" ? s.pages : choice.pages === "selected" ? s.pages.filter((p) => sel.has(p.id)) : current ? [current] : [];
+    const refs = this.pageIndices(choice).map((i) => s.pages[i]);
     const targets = refs.filter((p) => p.docId);
     if (!targets.length) return toast("Blank pages can't be cut.", "info");
     // Real page sizes, not the page-1 estimate used before a page was seen.
@@ -1080,46 +1149,14 @@ export class App {
     await page.render({ canvas, viewport: crop.viewport, background: "white" } as Parameters<typeof page.render>[0]).promise;
   }
 
-  /** Split into several PDFs (every N pages or by ranges), one file per part. */
-  async splitIntoFiles(): Promise<void> {
-    if (!this.mainDoc) return;
-    const s = this.history.state;
-    const total = s.pages.length;
-    const parts = await splitDialog(total, (how) => splitParts(total, how));
-    if (!parts) return;
-    const { base, folder } = this.outputBase();
-    const busy = progressOverlay("Preparing…");
-    try {
-      const bytes = await buildPdf(s, this.store, this.images, { onProgress: (_l, f) => busy.update("Preparing…", f * 0.4) });
-      const outs = await splitInWorker(bytes, parts, (f) => busy.update("Splitting…", 0.4 + f * 0.5));
-      const label = (p: number[]) => (p.length === 1 ? `p${p[0] + 1}` : `p${p[0] + 1}-${p[p.length - 1] + 1}`);
-      async function* files() {
-        for (const [k, b] of outs.entries()) yield { name: `${base} ${label(parts![k])}.pdf`, bytes: b, mime: "application/pdf" };
-      }
-      busy.close();
-      const res = await this.platform.saveMany(files(), folder);
-      if (res) toast(`Saved ${res.count} PDF file${res.count === 1 ? "" : "s"}${res.folder ? ` to ${res.folder}` : ""}.`, "ok", 5000);
-    } catch (e) {
-      console.error(e);
-      toast(`Split failed: ${(e as Error)?.message ?? e}`, "error", 8000);
-    } finally {
-      busy.close();
-    }
-  }
-
-  /** Export pages (current / selected / all) as PNG or JPG files. */
+  /** Export pages (current / selected / all / a range) as PNG or JPG files. */
   async exportImages(): Promise<void> {
     if (!this.mainDoc) return;
     const s = this.history.state;
     const sel = this.thumbs.selected;
     const choice = await exportImagesDialog(sel.size, s.pages.length);
     if (!choice) return;
-    const indices =
-      choice.pages === "all"
-        ? s.pages.map((_, i) => i)
-        : choice.pages === "selected"
-          ? s.pages.flatMap((p, i) => (sel.has(p.id) ? [i] : []))
-          : [this.activeViewer.currentIndex];
+    const indices = this.pageIndices(choice);
     const { base, folder } = this.outputBase();
     const busy = progressOverlay("Preparing…");
     try {
@@ -1196,10 +1233,13 @@ export class App {
         });
         break;
       case "extract":
-        void this.extractSelected();
+        void this.extractPages("one");
         break;
       case "splitFiles":
-        void this.splitIntoFiles();
+        void this.extractPages("ranges");
+        break;
+      case "moveTo":
+        void this.movePagesTo();
         break;
       case "cut":
         void this.cutPagesCmd();
@@ -1216,6 +1256,13 @@ export class App {
     this.tool = t;
     for (const p of this.panes) p.overlay.setTool(t);
     document.querySelectorAll<HTMLElement>("[data-tool]").forEach((b) => b.classList.toggle("on", b.dataset.tool === t));
+    this.toolOpts?.closeMenu();
+    this.toolOpts?.sync();
+  }
+
+  /** Clicking (or pressing the key of) the tool that's already on turns it off. */
+  private toggleTool(t: Tool): void {
+    this.setTool(t === this.tool && t !== "select" ? "select" : t);
   }
 
   private async addImage(): Promise<void> {
@@ -1559,7 +1606,7 @@ export class App {
       if (el.dataset.tool) {
         const t = el.dataset.tool as Tool;
         if (t === "highlight" && this.tool === "select" && this.activePane.overlay.highlightSelection()) return;
-        return this.setTool(t);
+        return this.toggleTool(t);
       }
       if (el.dataset.pageOp) return this.pageOp(el.dataset.pageOp);
       this.action(el.dataset.action!);
@@ -1572,23 +1619,11 @@ export class App {
       if (v === "width" || v === "page") this.activeViewer.setFit(v);
       else this.activeViewer.setZoom(parseFloat(v));
     });
-    const opts = () => this.panes[0].overlay.options;
-    $<HTMLInputElement>("#opt-color").addEventListener("input", (e) => {
-      const c = (e.target as HTMLInputElement).value;
-      opts().color = c;
-      if (this.tool === "highlight") opts().highlightColor = c;
-      for (const p of this.panes) p.overlay.styleSelected({ color: c });
-    });
-    $<HTMLSelectElement>("#opt-width").addEventListener("change", (e) => {
-      const w = parseFloat((e.target as HTMLSelectElement).value);
-      opts().strokeWidth = w;
-      for (const p of this.panes) p.overlay.styleSelected({ strokeWidth: w });
-    });
-    $<HTMLSelectElement>("#opt-font").addEventListener("change", (e) => {
-      const f = parseFloat((e.target as HTMLSelectElement).value);
-      opts().fontSize = f;
-      for (const p of this.panes) p.overlay.styleSelected({ fontSize: f });
-    });
+    this.toolOpts = new ToolOptionsUI(
+      () => this.panes.map((p) => p.overlay),
+      () => this.tool,
+      (t) => this.setTool(t),
+    );
   }
 
   private action(a: string): void {
@@ -1614,8 +1649,6 @@ export class App {
         return shortcutsDialog();
       case "about":
         return void aboutDialog();
-      case "labels":
-        return void this.printLabels();
       case "ocr":
         return void this.recognizeText();
       case "shrink":
@@ -1641,6 +1674,8 @@ export class App {
       }
       case "fromPhotos":
         return void this.pdfFromPhotos();
+      case "mergeFiles":
+        return void this.mergeFiles();
       case "protect":
         return void protectDialog().then((p) => p && this.save(true, p));
       case "stamp":
@@ -1700,6 +1735,15 @@ export class App {
       document.documentElement.dataset.theme = t;
       localStorage.setItem("pdfstudio:theme", t);
     }
+    // The button shows what you'd switch to: a sun in dark mode, a moon in light.
+    const cur = document.documentElement.dataset.theme;
+    const dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    const btn = document.getElementById("theme-btn");
+    if (btn) {
+      btn.innerHTML = icon(dark ? "sun" : "moon");
+      btn.title = dark ? "Light theme" : "Dark theme";
+      btn.setAttribute("aria-label", btn.title);
+    }
   }
 
   private bindSidebarTabs(): void {
@@ -1730,7 +1774,6 @@ export class App {
         const map: Record<string, () => void> = {
           o: () => void this.open(),
           p: () => void this.print(),
-          l: () => void this.printLabels(),
           s: () => void this.save(e.shiftKey),
           z: () => (e.shiftKey ? this.history.redo() : this.history.undo()),
           y: () => this.history.redo(),
@@ -1781,7 +1824,7 @@ export class App {
         n: "note",
         u: "highlight",
       };
-      if (tools[k] && this.mainDoc) this.setTool(tools[k]);
+      if (tools[k] && this.mainDoc) this.toggleTool(tools[k]);
       if (k === "m" && this.mainDoc) void this.addMark();
     });
   }

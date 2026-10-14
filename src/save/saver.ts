@@ -1,6 +1,7 @@
 import type { DocumentStore } from "../core/documents";
 import type { Annotation, EditState, FormValue, PageRef, StoredImage } from "../edit/model";
-import { TEXT_FONTS, textLines } from "../edit/model";
+import { isStandardFont, textFontCss, textLines } from "../edit/model";
+import { fontFileBytes } from "../ui/systemFonts";
 import type { PlanPage, SavePlan } from "./applyEdits";
 import type { Protection } from "./encrypt";
 import SaveWorker from "./save.worker?worker";
@@ -39,6 +40,7 @@ export async function buildPdf(
   const planPages: PlanPage[] = [];
   const needBytes = new Set<string>();
   const textImages: Record<string, Uint8Array> = {};
+  const fontFiles: Record<string, Uint8Array | null> = {};
   const usedImages = new Set<string>();
   let rastered = 0;
   const rasterTotal = pages.filter((p) => mustRaster(p, byPage, store)).length;
@@ -62,7 +64,10 @@ export async function buildPdf(
     }
     for (const a of annotations) {
       if (a.type === "image") usedImages.add(a.imageId);
-      if (a.type === "text" && NEEDS_RASTER_TEXT.test(a.text)) textImages[a.id] = await renderTextPng(a);
+      // Thai / CJK need system shaping; installed fonts get a picture too, used
+      // if their file can't be embedded.
+      if (a.type === "text" && (NEEDS_RASTER_TEXT.test(a.text) || !isStandardFont(a.font))) textImages[a.id] = await renderTextPng(a);
+      if (a.type === "text" && !isStandardFont(a.font) && !(a.font! in fontFiles)) fontFiles[a.font!] = await fontFileBytes(a.font!);
     }
     planPages.push(pp);
   }
@@ -89,7 +94,7 @@ export async function buildPdf(
     if (im) imgs[id] = { bytes: im.bytes.slice(), mime: im.mime };
   }
 
-  const plan: SavePlan = { sources, pages: planPages, formValues, images: imgs, textImages, nativeAnnotations: localStorage.getItem("pdfstudio:nativeAnnotations") === "1", incremental: localStorage.getItem("pdfstudio:incremental") === "1", protect: opts.protect };
+  const plan: SavePlan = { sources, pages: planPages, formValues, images: imgs, textImages, sourceNames: Object.fromEntries([...needBytes].map((id) => [id, store.docs.get(id)!.source.name.replace(/[.]pdf$/i, "")])), fontFiles: Object.fromEntries(Object.entries(fontFiles).filter((e): e is [string, Uint8Array] => !!e[1])), nativeAnnotations: localStorage.getItem("pdfstudio:nativeAnnotations") === "1", incremental: localStorage.getItem("pdfstudio:incremental") === "1", protect: opts.protect };
   progress("Writing PDF", 0);
   return runWorker(plan, transfer, (f) => progress("Writing PDF", f));
 }
@@ -178,7 +183,7 @@ async function renderTextPng(a: Extract<Annotation, { type: "text" }>): Promise<
   const ctx = canvas.getContext("2d")!;
   ctx.scale(k, k);
   ctx.fillStyle = a.color;
-  ctx.font = `${a.fontSize}px ${TEXT_FONTS}`;
+  ctx.font = `${a.fontSize}px ${textFontCss(a)}`;
   ctx.textBaseline = "alphabetic";
   for (const l of textLines(a)) ctx.fillText(l.text, 2, l.baseline + 2);
   const blob = await new Promise<Blob>((r) => canvas.toBlob((b) => r(b!), "image/png"));

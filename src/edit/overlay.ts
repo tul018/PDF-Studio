@@ -5,7 +5,7 @@ import {
   removeAnnotations,
   rotVec,
   simplifyPoints,
-  TEXT_FONTS,
+  textFontCss,
   textLines,
   translateAnnotation,
   uid,
@@ -15,6 +15,8 @@ import {
   type EditState,
   type ShapeKind,
   type StoredImage,
+  type TextAnnot,
+  type TextFont,
 } from "./model";
 import type { Decorator, Slot, Viewer } from "../viewer/viewer";
 
@@ -32,11 +34,37 @@ export type Tool =
   | "whiteout"
   | "redact";
 
+/** "free": drag any box. "fixed": every highlight is the same height (drag sideways for the width, or click for a fixed width). */
+export type HighlightMode = "free" | "fixed";
+
 export interface ToolOptions {
   color: string;
+  /** Line thickness for draw, box, circle, line and arrow (points). */
   strokeWidth: number;
+  /** Text size (points). */
   fontSize: number;
+  font: TextFont;
   highlightColor: string;
+  /** 0..1 */
+  highlightOpacity: number;
+  highlightMode: HighlightMode;
+  /** Fixed highlight size in points. */
+  highlightW: number;
+  highlightH: number;
+}
+
+export function defaultToolOptions(): ToolOptions {
+  return {
+    color: "#e53935",
+    strokeWidth: 2,
+    fontSize: 14,
+    font: "sans",
+    highlightColor: "#ffeb3b",
+    highlightOpacity: 0.45,
+    highlightMode: "free",
+    highlightW: 120,
+    highlightH: 14,
+  };
 }
 
 export interface SearchHitProvider {
@@ -66,7 +94,7 @@ interface PageState {
  */
 export class AnnotationOverlay implements Decorator {
   tool: Tool = "select";
-  options: ToolOptions = { color: "#e53935", strokeWidth: 2, fontSize: 14, highlightColor: "#ffeb3b" };
+  options: ToolOptions = defaultToolOptions();
   selectedId: string | null = null;
   private pages = new WeakMap<Slot, PageState>();
   private editing: { id: string; ta: HTMLTextAreaElement; before?: EditState } | null = null;
@@ -110,15 +138,33 @@ export class AnnotationOverlay implements Decorator {
     return true;
   }
 
+  /** The selected annotation, if any. */
+  get selected(): Annotation | null {
+    return this.state.annotations.find((x) => x.id === this.selectedId) ?? null;
+  }
+
   /** Recolor / restyle the selected annotation. */
-  styleSelected(patch: Partial<{ color: string; width: number; strokeWidth: number; fontSize: number }>): void {
-    const a = this.state.annotations.find((x) => x.id === this.selectedId);
+  styleSelected(
+    patch: Partial<{ color: string; strokeWidth: number; fontSize: number; font: TextFont; opacity: number }>,
+  ): void {
+    const a = this.selected;
     if (!a) return;
     const p: Record<string, unknown> = {};
-    if (patch.color && "color" in a) p.color = patch.color;
-    if (patch.strokeWidth !== undefined && "strokeWidth" in a) p.strokeWidth = patch.strokeWidth;
-    if (patch.strokeWidth !== undefined && "width" in a) p.width = patch.strokeWidth;
-    if (patch.fontSize !== undefined && a.type === "text") p.fontSize = patch.fontSize;
+    if (patch.color && "color" in a && a.color !== patch.color) p.color = patch.color;
+    if (patch.strokeWidth !== undefined && "strokeWidth" in a && a.type !== "highlight" && a.strokeWidth !== patch.strokeWidth)
+      p.strokeWidth = patch.strokeWidth;
+    if (patch.strokeWidth !== undefined && "width" in a && a.width !== patch.strokeWidth) p.width = patch.strokeWidth;
+    if (patch.opacity !== undefined && a.type === "highlight" && a.opacity !== patch.opacity) p.opacity = patch.opacity;
+    if (
+      a.type === "text" &&
+      ((patch.fontSize !== undefined && patch.fontSize !== a.fontSize) || (patch.font !== undefined && patch.font !== (a.font ?? "sans")))
+    ) {
+      const next = { ...a, fontSize: patch.fontSize ?? a.fontSize, font: patch.font ?? a.font };
+      p.fontSize = next.fontSize;
+      p.font = next.font;
+      // The frame follows the text: bigger letters, bigger frame.
+      p.box = fitTextBox(next, next.text);
+    }
     if (Object.keys(p).length) this.history.push(updateAnnotation(this.state, a.id, p as Partial<Annotation>));
   }
 
@@ -285,7 +331,7 @@ export class AnnotationOverlay implements Decorator {
             y: -a.box.h + line.baseline + 2,
             fill: a.color,
             "font-size": a.fontSize,
-            "font-family": TEXT_FONTS,
+            "font-family": textFontCss(a),
           });
           t.textContent = line.text || " ";
           inner.appendChild(t);
@@ -321,6 +367,9 @@ export class AnnotationOverlay implements Decorator {
   private attachHandlers(slot: Slot): void {
     const layer = slot.layers;
     layer.addEventListener("pointerdown", (e) => this.onPointerDown(slot, e));
+    // Never let the browser start its own drag of an annotation (it swallows
+    // the pointer until release and makes moving feel stuck).
+    layer.addEventListener("dragstart", (e) => e.preventDefault());
     layer.addEventListener("dblclick", (e) => {
       const id = (e.target as Element).closest<SVGElement>(".annot")?.dataset.id;
       const a = id && this.state.annotations.find((x) => x.id === id);
@@ -343,9 +392,14 @@ export class AnnotationOverlay implements Decorator {
 
     if (tool === "select") {
       const handleId = (target as SVGElement).dataset?.handle;
-      if (handleId) return this.dragResize(slot, e, handleId);
+      if (handleId) {
+        e.preventDefault();
+        return this.dragResize(slot, e, handleId);
+      }
       const id = target.closest<SVGElement>(".annot")?.dataset.id;
       if (id) {
+        // No text selection or native drag while moving an annotation.
+        e.preventDefault();
         this.select(id);
         this.dragMove(slot, e, id);
       } else {
@@ -358,15 +412,12 @@ export class AnnotationOverlay implements Decorator {
     e.preventDefault();
     const v = slot.view;
     const [sx, sy] = this.local(slot, e);
-    const layer = slot.layers;
-    layer.setPointerCapture(e.pointerId);
     const s0 = this.state;
     const pageId = slot.ref.id;
     const o = this.options;
 
     if (tool === "text") {
-      const w = 160,
-        h = o.fontSize * 1.7;
+      const [w, h] = textSize("", o.fontSize, o.font);
       const [x, y] = v.toPdf(sx, sy + h * v.scale);
       const a: Annotation = {
         id: uid("a"),
@@ -376,6 +427,7 @@ export class AnnotationOverlay implements Decorator {
         text: "",
         fontSize: o.fontSize,
         color: o.color,
+        font: o.font,
       };
       this.history.replace(addAnnotation(s0, a)); // committed as one step on edit end
       this.setTool("select");
@@ -394,131 +446,171 @@ export class AnnotationOverlay implements Decorator {
       return;
     }
 
-    let current: Annotation | null = null;
+    const id = uid("a");
     const pts: number[] = [];
-    const move = (ev: PointerEvent) => {
-      const [cx, cy] = this.local(slot, ev);
-      if (tool === "ink") {
-        // Use coalesced events for smooth Apple Pencil / Surface Pen strokes.
-        const evs = ev.getCoalescedEvents?.() ?? [ev];
-        for (const ce of evs.length ? evs : [ev]) {
-          const [lx, ly] = this.local(slot, ce);
-          const [px, py] = v.toPdf(lx, ly);
-          pts.push(px, py);
-        }
-        current = {
-          id: current?.id ?? uid("a"),
-          pageId,
-          type: "ink",
-          points: pts.slice(),
-          color: o.color,
-          width: o.strokeWidth,
-          opacity: 1,
-        };
-      } else if (tool === "line" || tool === "arrow") {
-        const [x1, y1] = v.toPdf(sx, sy);
-        const [x2, y2] = v.toPdf(cx, cy);
-        current = { id: current?.id ?? uid("a"), pageId, type: tool, x1, y1, x2, y2, color: o.color, width: o.strokeWidth };
-      } else if (SHAPE_TOOLS.includes(tool)) {
-        const box = boxFromView(v, sx, sy, cx, cy);
-        const isHl = tool === "highlight";
-        current = {
-          id: current?.id ?? uid("a"),
-          pageId,
-          type: tool as ShapeKind,
-          box,
-          color: isHl ? o.highlightColor : o.color,
-          strokeWidth: o.strokeWidth,
-          opacity: isHl ? 0.45 : 1,
-        };
-      }
-      if (current) this.history.replace(addAnnotation(s0, current));
-    };
+    let cx = sx,
+      cy = sy;
     if (tool === "ink") {
       const [px, py] = v.toPdf(sx, sy);
       pts.push(px, py);
     }
-    const up = () => {
-      layer.removeEventListener("pointermove", move);
-      layer.removeEventListener("pointerup", up);
-      layer.removeEventListener("pointercancel", up);
-      this.history.replace(s0);
-      if (!current) return;
-      const c = current as Annotation;
-      if (c.type === "ink") {
-        if (pts.length < 4) pts.push(pts[0] + 0.5, pts[1] + 0.5);
-        const simplified = simplifyPoints(pts, 0.35 / Math.max(0.25, v.scale / 2));
-        this.history.push(addAnnotation(s0, { ...c, points: simplified }));
-        return;
+    const fixedHl = tool === "highlight" && o.highlightMode === "fixed";
+    const build = (): Annotation | null => {
+      if (tool === "ink") return { id, pageId, type: "ink", points: pts.slice(), color: o.color, width: o.strokeWidth, opacity: 1 };
+      if (tool === "line" || tool === "arrow") {
+        const [x1, y1] = v.toPdf(sx, sy);
+        const [x2, y2] = v.toPdf(cx, cy);
+        return { id, pageId, type: tool, x1, y1, x2, y2, color: o.color, width: o.strokeWidth };
       }
-      if ("box" in c && (c.box.w < 3 || c.box.h < 3)) return;
-      if ((c.type === "line" || c.type === "arrow") && Math.hypot(c.x2 - c.x1, c.y2 - c.y1) < 3) return;
-      this.history.push(addAnnotation(s0, c));
+      if (!SHAPE_TOOLS.includes(tool)) return null;
+      let box: Box;
+      if (fixedHl) {
+        // Same height every time, centered on where you pressed; dragging sets
+        // the width, a plain click uses the fixed width.
+        const half = (o.highlightH * v.scale) / 2;
+        const ex = Math.abs(cx - sx) >= 3 ? cx : sx + o.highlightW * v.scale;
+        box = boxFromView(v, sx, sy - half, ex, sy + half);
+      } else {
+        box = boxFromView(v, sx, sy, cx, cy);
+      }
+      const isHl = tool === "highlight";
+      return {
+        id,
+        pageId,
+        type: tool as ShapeKind,
+        box,
+        color: isHl ? o.highlightColor : o.color,
+        strokeWidth: isHl ? 0 : o.strokeWidth,
+        opacity: isHl ? o.highlightOpacity : 1,
+      };
     };
-    layer.addEventListener("pointermove", move);
-    layer.addEventListener("pointerup", up);
-    layer.addEventListener("pointercancel", up);
+    // A fixed-size highlight shows where it will land as soon as you press.
+    if (fixedHl) this.history.replace(addAnnotation(s0, build()!));
+    trackPointer(
+      e,
+      slot.layers,
+      (ev) => {
+        if (tool === "ink") {
+          // Use coalesced events for smooth Apple Pencil / Surface Pen strokes.
+          const evs = ev.getCoalescedEvents?.() ?? [];
+          for (const ce of evs.length ? evs : [ev]) {
+            const [lx, ly] = this.local(slot, ce);
+            const [px, py] = v.toPdf(lx, ly);
+            pts.push(px, py);
+          }
+        }
+        [cx, cy] = this.local(slot, ev);
+      },
+      () => {
+        const cur = build();
+        if (cur) this.history.replace(addAnnotation(s0, cur));
+      },
+      () => {
+        this.history.replace(s0);
+        const c = build();
+        if (!c) return;
+        if (c.type === "ink") {
+          if (pts.length < 4) pts.push(pts[0] + 0.5, pts[1] + 0.5);
+          const simplified = simplifyPoints(pts, 0.35 / Math.max(0.25, v.scale / 2));
+          this.history.push(addAnnotation(s0, { ...c, points: simplified }));
+          return;
+        }
+        if ("box" in c && (c.box.w < 3 || c.box.h < 3)) return;
+        if ((c.type === "line" || c.type === "arrow") && Math.hypot(c.x2 - c.x1, c.y2 - c.y1) < 3) return;
+        this.history.push(addAnnotation(s0, c));
+      },
+    );
   }
 
   private dragMove(slot: Slot, e: PointerEvent, id: string): void {
     const v = slot.view;
-    const layer = slot.layers;
-    layer.setPointerCapture(e.pointerId);
     const s0 = this.state;
     const a0 = s0.annotations.find((a) => a.id === id)!;
     const [sx, sy] = this.local(slot, e);
     const [px0, py0] = v.toPdf(sx, sy);
-    let moved = false;
-    const move = (ev: PointerEvent) => {
-      const [cx, cy] = this.local(slot, ev);
-      if (!moved && Math.hypot(cx - sx, cy - sy) < 3) return;
-      moved = true;
-      const [px, py] = v.toPdf(cx, cy);
-      const next = translateAnnotation(a0, px - px0, py - py0);
-      this.history.replace({ ...s0, annotations: s0.annotations.map((a) => (a.id === id ? next : a)) });
-    };
-    const up = () => {
-      layer.removeEventListener("pointermove", move);
-      layer.removeEventListener("pointerup", up);
-      layer.removeEventListener("pointercancel", up);
-      if (!moved) return;
-      const final = this.state;
-      this.history.replace(s0);
-      this.history.push(final);
-    };
-    layer.addEventListener("pointermove", move);
-    layer.addEventListener("pointerup", up);
-    layer.addEventListener("pointercancel", up);
+    let cx = sx,
+      cy = sy,
+      moved = false;
+    trackPointer(
+      e,
+      slot.layers,
+      (ev) => {
+        [cx, cy] = this.local(slot, ev);
+        if (!moved && Math.hypot(cx - sx, cy - sy) >= 3) moved = true;
+      },
+      () => {
+        if (!moved) return;
+        const [px, py] = v.toPdf(cx, cy);
+        const next = translateAnnotation(a0, px - px0, py - py0);
+        this.history.replace({ ...s0, annotations: s0.annotations.map((a) => (a.id === id ? next : a)) });
+      },
+      () => {
+        if (!moved) return;
+        const final = this.state;
+        this.history.replace(s0);
+        this.history.push(final);
+      },
+    );
   }
 
+  /**
+   * The handle sits on the box's top-right corner and stays under the
+   * pointer. Images and text keep their proportions (text scales its font);
+   * hold Shift to stretch an image freely.
+   */
   private dragResize(slot: Slot, e: PointerEvent, id: string): void {
     e.stopPropagation();
     const v = slot.view;
-    const layer = slot.layers;
-    layer.setPointerCapture(e.pointerId);
     const s0 = this.state;
     const a0 = s0.annotations.find((a) => a.id === id) as Annotation & { box: Box };
+    const b0 = a0.box;
     const [sx, sy] = this.local(slot, e);
     const [px0, py0] = v.toPdf(sx, sy);
-    const keepAspect = a0.type === "image";
-    const move = (ev: PointerEvent) => {
-      const [cx, cy] = this.local(slot, ev);
-      const [px, py] = v.toPdf(cx, cy);
-      const [ldx, ldy] = rotVec(-a0.box.rot, px - px0, py - py0);
-      let w = Math.max(6, a0.box.w + ldx);
-      let h = Math.max(6, a0.box.h + ldy);
-      if (keepAspect) h = (w * a0.box.h) / a0.box.w;
-      this.history.replace(updateAnnotation(s0, id, { box: { ...a0.box, w, h } } as Partial<Annotation>));
-    };
-    const up = () => {
-      layer.removeEventListener("pointermove", move);
-      layer.removeEventListener("pointerup", up);
-      const final = this.state;
-      this.history.replace(s0);
-      this.history.push(final);
-    };
-    layer.addEventListener("pointermove", move);
-    layer.addEventListener("pointerup", up);
+    let cx = sx,
+      cy = sy,
+      free = false,
+      moved = false;
+    const MIN = 6;
+    trackPointer(
+      e,
+      slot.layers,
+      (ev) => {
+        [cx, cy] = this.local(slot, ev);
+        free = ev.shiftKey;
+        if (!moved && Math.hypot(cx - sx, cy - sy) >= 2) moved = true;
+      },
+      () => {
+        if (!moved) return;
+        const [px, py] = v.toPdf(cx, cy);
+        // Where the corner should be, in the box's own (unrotated) frame.
+        const [ldx, ldy] = rotVec(-b0.rot, px - px0, py - py0);
+        const tw = b0.w + ldx,
+          th = b0.h + ldy;
+        let patch: Partial<Annotation>;
+        if (a0.type === "text" || (a0.type === "image" && !free)) {
+          // Uniform scale: project the pointer onto the box diagonal so the
+          // corner follows the mouse in any direction.
+          const minK = MIN / Math.min(b0.w, b0.h);
+          const k = Math.max(minK, (tw * b0.w + th * b0.h) / (b0.w * b0.w + b0.h * b0.h));
+          if (a0.type === "text") {
+            const fontSize = Math.max(4, Math.round(a0.fontSize * k * 2) / 2);
+            const [w, h] = textSize(a0.text, fontSize, a0.font);
+            patch = { fontSize, box: { ...b0, w, h } } as Partial<Annotation>;
+          } else {
+            patch = { box: { ...b0, w: b0.w * k, h: b0.h * k } } as Partial<Annotation>;
+          }
+        } else {
+          patch = { box: { ...b0, w: Math.max(MIN, tw), h: Math.max(MIN, th) } } as Partial<Annotation>;
+        }
+        this.history.replace(updateAnnotation(s0, id, patch));
+      },
+      () => {
+        if (!moved) return;
+        const final = this.state;
+        this.history.replace(s0);
+        this.history.push(final);
+      },
+    );
   }
 
   private dragPan(e: PointerEvent): void {
@@ -527,16 +619,16 @@ export class AnnotationOverlay implements Decorator {
       y0 = e.clientY,
       l0 = sc.scrollLeft,
       t0 = sc.scrollTop;
-    const move = (ev: PointerEvent) => {
-      sc.scrollLeft = l0 - (ev.clientX - x0);
-      sc.scrollTop = t0 - (ev.clientY - y0);
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    trackPointer(
+      e,
+      sc,
+      (ev) => {
+        sc.scrollLeft = l0 - (ev.clientX - x0);
+        sc.scrollTop = t0 - (ev.clientY - y0);
+      },
+      () => {},
+      () => {},
+    );
   }
 
   // ----------------------------------------------------------- text edit
@@ -549,11 +641,12 @@ export class AnnotationOverlay implements Decorator {
     ta.className = "text-editor";
     ta.value = a.text;
     ta.spellcheck = true;
+    ta.wrap = "off"; // lines break only where you press Enter, like the saved text
     this.editing = { id, ta, before };
     slot.layers.appendChild(ta);
     this.positionEditor(slot);
     this.viewer.redecorate(slot.ref.id);
-    ta.addEventListener("input", () => this.autosizeEditor(slot));
+    ta.addEventListener("input", () => this.sizeEditor(slot));
     ta.addEventListener("keydown", (e) => {
       e.stopPropagation();
       if (e.key === "Escape" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
@@ -577,28 +670,25 @@ export class AnnotationOverlay implements Decorator {
     Object.assign(ta.style, {
       left: `${tlx}px`,
       top: `${tly}px`,
-      width: `${a.box.w * v.scale}px`,
-      height: `${a.box.h * v.scale}px`,
       fontSize: `${a.fontSize * v.scale}px`,
+      fontFamily: textFontCss(a),
       color: a.color,
       transform: `rotate(${v.rotation - a.box.rot}deg)`,
     });
     if (!ta.isConnected) slot.layers.appendChild(ta);
+    this.sizeEditor(slot);
   }
 
-  private autosizeEditor(slot: Slot): void {
+  /** The editing frame hugs what you've typed (plus room for the caret). */
+  private sizeEditor(slot: Slot): void {
     if (!this.editing) return;
     const ta = this.editing.ta;
     const v = slot.view;
     const a = this.state.annotations.find((x) => x.id === this.editing!.id);
     if (!a || a.type !== "text") return;
-    const lines = ta.value.split("\n");
-    const ctx = measureCtx();
-    ctx.font = `${a.fontSize}px ${TEXT_FONTS}`;
-    const w = Math.max(60, ...lines.map((l) => ctx.measureText(l).width + 8));
-    const h = a.fontSize * (0.5 + lines.length * 1.25);
-    ta.style.width = `${Math.max(a.box.w, w) * v.scale}px`;
-    ta.style.height = `${h * v.scale}px`;
+    const [w, h] = textSize(ta.value, a.fontSize, a.font);
+    ta.style.width = `${(w + a.fontSize * 0.6) * v.scale}px`;
+    ta.style.height = `${(h + 2) * v.scale}px`;
   }
 
   commitTextEdit(): void {
@@ -615,20 +705,13 @@ export class AnnotationOverlay implements Decorator {
       else this.history.push(removeAnnotations(this.state, new Set([a.id])));
       return;
     }
-    const ctx = measureCtx();
-    ctx.font = `${a.fontSize}px ${TEXT_FONTS}`;
-    const lines = text.split("\n");
-    const w = Math.max(20, ...lines.map((l) => ctx.measureText(l).width + 6));
-    const h = a.fontSize * (0.45 + lines.length * 1.25);
     // Keep the visual top-left fixed while the box grows downwards.
-    const [tx, ty] = boxCorner(a.box, 0, a.box.h);
-    const [dx, dy] = rotVec(a.box.rot, 0, -h);
-    const box: Box = { ...a.box, x: tx + dx, y: ty + dy, w, h };
+    const box = fitTextBox(a, text);
     if (ed.before) {
       const final = updateAnnotation(this.state, a.id, { text, box } as Partial<Annotation>);
       this.history.replace(ed.before);
       this.history.push(final);
-    } else if (text !== a.text || w !== a.box.w || h !== a.box.h) {
+    } else if (text !== a.text || box.w !== a.box.w || box.h !== a.box.h) {
       this.history.push(updateAnnotation(this.state, a.id, { text, box } as Partial<Annotation>));
     } else {
       this.viewer.redecorate(a.pageId);
@@ -666,7 +749,7 @@ export class AnnotationOverlay implements Decorator {
             box,
             color: this.options.highlightColor,
             strokeWidth: 0,
-            opacity: 0.45,
+            opacity: this.options.highlightOpacity,
           });
           count++;
         }
@@ -753,6 +836,80 @@ function mergeLineRects(rects: DOMRect[]): DOMRect[] {
     }
   }
   return out;
+}
+
+/**
+ * Follow one pointer until it is released or cancelled, wherever it goes.
+ * Listening on the window (plus pointer capture) means releasing outside the
+ * page, or the page scrolling away mid-drag, can't leave a drag stuck on the
+ * mouse. Moves are applied once per animation frame: each edit redraws the
+ * pages, and doing that for every mouse event is what made dragging stutter.
+ */
+export function trackPointer(
+  e: PointerEvent,
+  el: Element,
+  onMove: (ev: PointerEvent) => void,
+  frame: () => void,
+  onEnd: () => void,
+): void {
+  const id = e.pointerId;
+  try {
+    el.setPointerCapture(id);
+  } catch {
+    /* not capturable (element gone); the window listeners still see the pointer */
+  }
+  let raf = 0;
+  const move = (ev: PointerEvent) => {
+    if (ev.pointerId !== id) return;
+    // The button was released somewhere we didn't hear about.
+    if (ev.pointerType === "mouse" && ev.buttons === 0) return end(ev);
+    onMove(ev);
+    if (!raf)
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        frame();
+      });
+  };
+  const end = (ev: Event) => {
+    if (ev instanceof PointerEvent && ev.pointerId !== id) return;
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", end, true);
+    window.removeEventListener("pointercancel", end, true);
+    window.removeEventListener("blur", end);
+    try {
+      if (el.hasPointerCapture(id)) el.releasePointerCapture(id);
+    } catch {
+      /* already released */
+    }
+    if (raf) {
+      cancelAnimationFrame(raf);
+      raf = 0;
+      frame();
+    }
+    onEnd();
+  };
+  window.addEventListener("pointermove", move, true);
+  window.addEventListener("pointerup", end, true);
+  window.addEventListener("pointercancel", end, true);
+  window.addEventListener("blur", end);
+}
+
+/** Width and height (points) of a text box that just fits `text`. */
+export function textSize(text: string, fontSize: number, font?: TextFont): [number, number] {
+  const ctx = measureCtx();
+  ctx.font = `${fontSize}px ${textFontCss({ font })}`;
+  const lines = text.split("\n");
+  const w = Math.max(fontSize * 0.6, ...lines.map((l) => ctx.measureText(l).width + 6));
+  const h = fontSize * (0.45 + lines.length * 1.25);
+  return [w, h];
+}
+
+/** Text box resized to fit its text, keeping its visual top-left corner in place. */
+export function fitTextBox(a: Pick<TextAnnot, "box" | "fontSize" | "font">, text: string): Box {
+  const [w, h] = textSize(text, a.fontSize, a.font);
+  const [tx, ty] = boxCorner(a.box, 0, a.box.h);
+  const [dx, dy] = rotVec(a.box.rot, 0, -h);
+  return { ...a.box, x: tx + dx, y: ty + dy, w, h };
 }
 
 let _ctx: CanvasRenderingContext2D | null = null;

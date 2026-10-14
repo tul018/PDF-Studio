@@ -30,6 +30,7 @@ export const MENUS: Menu[] = [
     label: "File",
     items: [
       { label: "New PDF from photos…", run: { action: "fromPhotos" } },
+      { label: "Merge PDFs…", run: { action: "mergeFiles" } },
       { label: "Open…", run: { action: "open" }, keys: "Ctrl+O" },
       { label: "Open recent", sub: [], dynamic: "recent" },
       { label: "Search a folder of PDFs…", run: { action: "folderSearch" }, keys: "Ctrl+Shift+F" },
@@ -53,8 +54,7 @@ export const MENUS: Menu[] = [
         needsDoc: true,
         sub: [
           { label: "Pages as images (PNG/JPG)…", run: { pageOp: "exportImages" }, needsDoc: true },
-          { label: "Split into PDF files…", run: { pageOp: "splitFiles" }, needsDoc: true },
-          { label: "Selected pages as PDF…", run: { pageOp: "extract" }, needsDoc: true },
+          { label: "Extract / split pages…", run: { pageOp: "extract" }, needsDoc: true },
           "-",
           { label: "Word document…", run: { pro: "word" }, needsDoc: true },
           { label: "Excel workbook…", run: { pro: "excel" }, needsDoc: true },
@@ -63,7 +63,6 @@ export const MENUS: Menu[] = [
       },
       "-",
       { label: "Print…", run: { action: "print" }, keys: "Ctrl+P", needsDoc: true },
-      { label: "Print labels…", run: { action: "labels" }, keys: "Ctrl+L", needsDoc: true },
       "-",
       { label: "Close tab", run: { action: "closeTab" }, needsDoc: true },
     ],
@@ -96,6 +95,7 @@ export const MENUS: Menu[] = [
         sub: [
           { label: "Rotate left", run: { pageOp: "rotL" }, needsDoc: true },
           { label: "Rotate right", run: { pageOp: "rotR" }, needsDoc: true },
+          { label: "Move to page…", run: { pageOp: "moveTo" }, needsDoc: true },
           { label: "Cut pages…", run: { pageOp: "cut" }, needsDoc: true },
           { label: "Delete pages", run: { pageOp: "delete" }, needsDoc: true },
         ],
@@ -120,7 +120,6 @@ export const MENUS: Menu[] = [
       { label: "Compare with another PDF…", run: { pro: "compare" }, needsDoc: true },
       "-",
       { label: "Night reading", run: { action: "nightPages" }, needsDoc: true },
-      { label: "Light / dark theme", run: { action: "theme" } },
       "-",
       { label: "Read aloud", run: { action: "readAloud" }, needsDoc: true },
       { label: "Mark this position", run: { action: "mark" }, keys: "Ctrl+D", needsDoc: true },

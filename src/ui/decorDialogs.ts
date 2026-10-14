@@ -11,6 +11,7 @@ import {
   type TextStamp,
 } from "../edit/stamps";
 import { buttons, modal, promptText, title, toast } from "./dialogs";
+import { parsePages } from "../save/split";
 
 /** Dialogs for stamps, page numbers and watermarks. Choices are remembered. */
 
@@ -296,25 +297,90 @@ export function watermarkDialog(hasWatermark: boolean): Promise<WatermarkOptions
 
 // ------------------------------------------------------------------ export images / split into files
 
-export type PageChoice = "current" | "selected" | "all";
+export type PageChoice = "current" | "selected" | "all" | "range";
 
-function pageChoice(box: HTMLElement, selected: number, total: number, value: PageChoice): HTMLSelectElement {
+/**
+ * Which pages: current, selected, all, or typed ranges ("1-3, 7, 10-").
+ * `count()` is how many pages that is, or null while the ranges are invalid.
+ */
+function pageChoice(box: HTMLElement, selected: number, total: number, value: PageChoice, ranges: string) {
   const opts: [string, string][] = [["current", "Current page"]];
   if (selected > 1) opts.push(["selected", `Selected pages (${selected})`]);
-  opts.push(["all", `All pages (${total})`]);
+  opts.push(["all", `All pages (${total})`], ["range", "Page range…"]);
   const s = select(opts, opts.some(([v]) => v === value) ? value : "current");
   row(box, "Pages", s);
-  return s;
+  const input = document.createElement("input");
+  input.className = "modal-input";
+  input.placeholder = "e.g. 1-3, 7, 10-";
+  input.value = ranges;
+  const rangeRow = row(box, "Page range", input);
+  const err = document.createElement("p");
+  err.className = "small error-text";
+  box.appendChild(err);
+  const count = (): number | null => {
+    if (s.value === "all") return total;
+    if (s.value === "selected") return selected;
+    if (s.value === "current") return 1;
+    try {
+      return parsePages(total, input.value).length;
+    } catch {
+      return null;
+    }
+  };
+  const sync = () => {
+    rangeRow.hidden = s.value !== "range";
+    err.hidden = true;
+    if (s.value === "range" && input.value.trim()) {
+      try {
+        parsePages(total, input.value);
+      } catch (e) {
+        err.textContent = (e as Error).message;
+        err.hidden = false;
+      }
+    }
+  };
+  s.addEventListener("change", () => {
+    sync();
+    if (s.value === "range") input.focus();
+  });
+  input.addEventListener("input", sync);
+  input.addEventListener("keydown", (e) => e.stopPropagation());
+  sync();
+  return {
+    select: s,
+    input,
+    count,
+    /** The choice, or null (and the range box focused) if the typed ranges are invalid. */
+    value(): { pages: PageChoice; ranges: string } | null {
+      if (s.value === "range" && count() === null) {
+        sync();
+        if (!input.value.trim()) {
+          err.textContent = "Type the pages, e.g. 1-3, 7, 10-";
+          err.hidden = false;
+        }
+        input.focus();
+        return null;
+      }
+      return { pages: s.value as PageChoice, ranges: input.value };
+    },
+  };
 }
 
 const IMG_KEY = "pdfstudio:export-images";
 
-export function exportImagesDialog(selected: number, total: number): Promise<{ pages: PageChoice; format: "png" | "jpeg"; dpi: number } | null> {
-  const o = remember(IMG_KEY, { pages: "current" as PageChoice, format: "png" as "png" | "jpeg", dpi: 150 });
+export interface ExportImagesChoice {
+  pages: PageChoice;
+  ranges: string;
+  format: "png" | "jpeg";
+  dpi: number;
+}
+
+export function exportImagesDialog(selected: number, total: number): Promise<ExportImagesChoice | null> {
+  const o = remember(IMG_KEY, { pages: "current" as PageChoice, ranges: "", format: "png" as "png" | "jpeg", dpi: 150 });
   return new Promise((resolve) => {
     modal((box, close) => {
       title(box, "Export pages as images", "Each page becomes a picture file, ready for Shopee, Lazada or LINE.");
-      const pages = pageChoice(box, selected, total, o.pages);
+      const pages = pageChoice(box, selected, total, o.pages, o.ranges);
       const format = select(
         [
           ["png", "PNG (sharp text, transparent-free)"],
@@ -332,7 +398,7 @@ export function exportImagesDialog(selected: number, total: number): Promise<{ p
         String(o.dpi),
       );
       row(box, "Quality", dpi);
-      const done = (v: { pages: PageChoice; format: "png" | "jpeg"; dpi: number } | null) => {
+      const done = (v: ExportImagesChoice | null) => {
         if (v) store(IMG_KEY, v);
         close();
         resolve(v);
@@ -343,7 +409,10 @@ export function exportImagesDialog(selected: number, total: number): Promise<{ p
         {
           label: "Export",
           primary: true,
-          onClick: () => done({ pages: pages.value as PageChoice, format: format.value as "png" | "jpeg", dpi: Number(dpi.value) }),
+          onClick: () => {
+            const p = pages.value();
+            if (p) done({ ...p, format: format.value as "png" | "jpeg", dpi: Number(dpi.value) });
+          },
         },
       ]);
     });
@@ -352,41 +421,64 @@ export function exportImagesDialog(selected: number, total: number): Promise<{ p
 
 const SPLIT_KEY = "pdfstudio:split";
 
-/** How to split the document into files; `parts` validates and returns the page groups. */
-export function splitDialog(total: number, parts: (how: { every: number } | { ranges: string }) => number[][]): Promise<number[][] | null> {
-  const o = remember(SPLIT_KEY, { mode: "every", every: 1, ranges: "" });
+export type ExtractMode = "one" | "ranges" | "every";
+
+/** What to make: the page groups, and whether they go into one PDF or one file each. */
+export interface ExtractChoice {
+  parts: number[][];
+  oneFile: boolean;
+}
+
+/**
+ * Extract / split pages, one dialog for both:
+ *   - "one":    the pages you list, together in one new PDF
+ *   - "ranges": each range you list as its own PDF
+ *   - "every":  every N pages as its own PDF
+ * `start` is the mode to open in; `pages` prefills the page box (e.g. the selection).
+ */
+export function extractDialog(
+  total: number,
+  start: { mode?: ExtractMode; pages?: string },
+  parts: (how: { every: number } | { ranges: string }) => number[][],
+): Promise<ExtractChoice | null> {
+  const o = remember(SPLIT_KEY, { mode: "one" as ExtractMode, every: 1, ranges: "" });
   return new Promise((resolve) => {
     modal((box, close) => {
-      title(box, "Split into files", `This document has ${total} pages. Each part is saved as its own PDF.`);
+      title(box, "Extract / split pages", `This document has ${total} pages. The original file isn't changed.`);
       const mode = select(
         [
-          ["every", "Every N pages"],
-          ["ranges", "By page ranges"],
+          ["one", "Chosen pages → one new PDF"],
+          ["ranges", "Each range → its own PDF"],
+          ["every", "Every N pages → its own PDF"],
         ],
-        o.mode,
+        start.mode ?? o.mode,
       );
-      row(box, "Split", mode);
+      row(box, "Make", mode);
       const every = num(o.every, 1, Math.max(1, total));
       const everyRow = row(box, "Pages per file", every);
       const ranges = document.createElement("input");
       ranges.className = "modal-input";
-      ranges.placeholder = "e.g. 1-3, 4-10, 11-";
-      ranges.value = o.ranges;
-      const rangesRow = row(box, "Ranges", ranges);
+      ranges.value = start.pages ?? o.ranges;
+      ranges.addEventListener("keydown", (e) => e.stopPropagation());
+      const rangesRow = row(box, "Pages", ranges);
       const info = document.createElement("p");
       info.className = "muted small";
       box.appendChild(info);
       let result: number[][] | null = null;
       const how = () => (mode.value === "every" ? { every: Number(every.value) || 1 } : { ranges: ranges.value });
+      const label = (p: number[]) => (p.length === 1 ? `${p[0] + 1}` : `${p[0] + 1}-${p[p.length - 1] + 1}`);
       const sync = () => {
         everyRow.hidden = mode.value !== "every";
-        rangesRow.hidden = mode.value !== "ranges";
+        rangesRow.hidden = mode.value === "every";
+        ranges.placeholder = mode.value === "one" ? "e.g. 1-3, 7, 10-" : "e.g. 1-3, 4-10, 11-";
         try {
           result = parts(how());
-          info.textContent = `${result.length} file${result.length === 1 ? "" : "s"}: ${result
-            .slice(0, 6)
-            .map((p) => (p.length === 1 ? `${p[0] + 1}` : `${p[0] + 1}-${p[p.length - 1] + 1}`))
-            .join(", ")}${result.length > 6 ? ", …" : ""}`;
+          if (mode.value === "one") {
+            const n = new Set(result.flat()).size;
+            info.textContent = `1 file with ${n} page${n === 1 ? "" : "s"}.`;
+          } else {
+            info.textContent = `${result.length} file${result.length === 1 ? "" : "s"}: ${result.slice(0, 6).map(label).join(", ")}${result.length > 6 ? ", …" : ""}`;
+          }
           info.classList.remove("error-text");
         } catch (e) {
           result = null;
@@ -395,8 +487,9 @@ export function splitDialog(total: number, parts: (how: { every: number } | { ra
         }
       };
       for (const el of [mode, every, ranges]) el.addEventListener("input", sync);
+      mode.addEventListener("change", sync);
       sync();
-      const done = (v: number[][] | null) => {
+      const done = (v: ExtractChoice | null) => {
         store(SPLIT_KEY, { mode: mode.value, every: Number(every.value) || 1, ranges: ranges.value });
         close();
         resolve(v);
@@ -404,7 +497,73 @@ export function splitDialog(total: number, parts: (how: { every: number } | { ra
       escClose(box, () => done(null));
       buttons(box, [
         { label: "Cancel", onClick: () => done(null) },
-        { label: "Split", primary: true, onClick: () => (result ? done(result) : ranges.focus()) },
+        {
+          label: "Save…",
+          primary: true,
+          onClick: () => {
+            if (!result) return ranges.focus();
+            if (mode.value === "one") done({ parts: [[...new Set(result.flat())]], oneFile: true });
+            else done({ parts: result, oneFile: false });
+          },
+        },
+      ]);
+      requestAnimationFrame(() => (mode.value === "every" ? every : ranges).focus());
+    });
+  });
+}
+
+// ------------------------------------------------------------------ merge PDFs
+
+/** Put the chosen files in order (and drop any) before merging. Returns the order as indices. */
+export function mergeDialog(names: string[]): Promise<number[] | null> {
+  return new Promise((resolve) => {
+    modal((box, close) => {
+      title(box, "Merge PDFs", "The files are joined in this order into one new PDF. The originals aren't changed.");
+      const order = names.map((_, i) => i);
+      const list = document.createElement("ol");
+      list.className = "merge-list";
+      box.appendChild(list);
+      const info = document.createElement("p");
+      info.className = "muted small";
+      box.appendChild(info);
+      const small = (label: string, icon: string, onClick: () => void, disabled: boolean) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "icon-btn small";
+        b.title = label;
+        b.setAttribute("aria-label", label);
+        b.textContent = icon;
+        b.disabled = disabled;
+        b.addEventListener("click", onClick);
+        return b;
+      };
+      const render = () => {
+        list.replaceChildren(
+          ...order.map((fi, k) => {
+            const li = document.createElement("li");
+            const name = document.createElement("span");
+            name.className = "merge-name";
+            name.textContent = names[fi];
+            li.append(
+              name,
+              small("Move up", "↑", () => (order.splice(k - 1, 0, ...order.splice(k, 1)), render()), k === 0),
+              small("Move down", "↓", () => (order.splice(k + 1, 0, ...order.splice(k, 1)), render()), k === order.length - 1),
+              small("Remove", "✕", () => (order.splice(k, 1), render()), false),
+            );
+            return li;
+          }),
+        );
+        info.textContent = order.length < 2 ? "Choose at least two files to merge." : `${order.length} files → 1 PDF.`;
+      };
+      render();
+      const done = (v: number[] | null) => {
+        close();
+        resolve(v);
+      };
+      escClose(box, () => done(null));
+      buttons(box, [
+        { label: "Cancel", onClick: () => done(null) },
+        { label: "Merge", primary: true, onClick: () => order.length >= 2 && done(order.slice()) },
       ]);
     });
   });
@@ -416,6 +575,7 @@ const CUT_KEY = "pdfstudio:cut";
 
 export interface CutChoice {
   pages: PageChoice;
+  ranges: string;
   /** Fractions 0..1 (x from the left, y from the top), or undefined for no cut. */
   x?: number;
   y?: number;
@@ -426,12 +586,12 @@ export interface CutChoice {
  * percentage, with a live preview on the current page.
  */
 export function cutDialog(selected: number, total: number, preview: (canvas: HTMLCanvasElement) => Promise<void>): Promise<CutChoice | null> {
-  const o = remember(CUT_KEY, { pages: "current" as PageChoice, vOn: true, v: 50, hOn: false, h: 50 });
+  const o = remember(CUT_KEY, { pages: "current" as PageChoice, ranges: "", vOn: true, v: 50, hOn: false, h: 50 });
   return new Promise((resolve) => {
     modal((box, close) => {
       box.classList.add("cut-dialog");
       title(box, "Cut pages", "Each page is cut into pieces and every piece becomes its own page, e.g. a 2-up scan or an A3 spread into A4 pages.");
-      const pages = pageChoice(box, selected, total, o.pages);
+      const pages = pageChoice(box, selected, total, o.pages, o.ranges);
 
       const stage = document.createElement("div");
       stage.className = "cut-stage";
@@ -482,15 +642,16 @@ export function cutDialog(selected: number, total: number, preview: (canvas: HTM
         vLine.style.left = `${vx}%`;
         hLine.style.top = `${hy}%`;
         const pieces = (v.cb.checked ? 2 : 1) * (h.cb.checked ? 2 : 1);
-        const n = pages.value === "all" ? total : pages.value === "selected" ? selected : 1;
+        const n = pages.count() ?? 0;
         info.textContent =
-          pieces < 2 ? "Turn on at least one cut." : `${n} page${n === 1 ? "" : "s"} → ${n * pieces} pages (${pieces} pieces each). Undo (Ctrl+Z) puts them back.`;
+          pieces < 2 ? "Turn on at least one cut." : n === 0 ? "Type the pages to cut, e.g. 1-3, 7." : `${n} page${n === 1 ? "" : "s"} → ${n * pieces} pages (${pieces} pieces each). Undo (Ctrl+Z) puts them back.`;
       }
-      pages.addEventListener("change", sync);
+      pages.select.addEventListener("change", sync);
+      pages.input.addEventListener("input", sync);
       sync();
 
       const done = (val: CutChoice | null) => {
-        store(CUT_KEY, { pages: pages.value, vOn: v.cb.checked, v: clamp(v.n.value), hOn: h.cb.checked, h: clamp(h.n.value) });
+        store(CUT_KEY, { pages: pages.select.value, ranges: pages.input.value, vOn: v.cb.checked, v: clamp(v.n.value), hOn: h.cb.checked, h: clamp(h.n.value) });
         close();
         resolve(val);
       };
@@ -502,8 +663,10 @@ export function cutDialog(selected: number, total: number, preview: (canvas: HTM
           primary: true,
           onClick: () => {
             if (!v.cb.checked && !h.cb.checked) return;
+            const p = pages.value();
+            if (!p) return;
             done({
-              pages: pages.value as PageChoice,
+              ...p,
               x: v.cb.checked ? clamp(v.n.value) / 100 : undefined,
               y: h.cb.checked ? clamp(h.n.value) / 100 : undefined,
             });
@@ -696,12 +859,12 @@ export function settingsDialog(v: SettingsValues): Promise<(SettingsValues & { r
 
 const OCR_KEY = "pdfstudio:ocr";
 
-export function ocrDialog(selected: number, total: number): Promise<{ pages: PageChoice; langs: ("tha" | "eng" | "chi_sim")[]; skipText: boolean } | null> {
-  const o = remember(OCR_KEY, { pages: "all" as PageChoice, tha: true, eng: true, chi_sim: false, skipText: true });
+export function ocrDialog(selected: number, total: number): Promise<{ pages: PageChoice; ranges: string; langs: ("tha" | "eng" | "chi_sim")[]; skipText: boolean } | null> {
+  const o = remember(OCR_KEY, { pages: "all" as PageChoice, ranges: "", tha: true, eng: true, chi_sim: false, skipText: true });
   return new Promise((resolve) => {
     modal((box, close) => {
       title(box, "Recognize text (OCR)", "Makes scanned pages searchable and copyable, offline. A searchable copy opens in a new tab; the pages look the same.");
-      const pages = pageChoice(box, selected, total, o.pages);
+      const pages = pageChoice(box, selected, total, o.pages, o.ranges);
       const tha = check(box, "Thai", o.tha);
       const eng = check(box, "English", o.eng);
       const chi = check(box, "Chinese (simplified)", o.chi_sim);
@@ -709,7 +872,7 @@ export function ocrDialog(selected: number, total: number): Promise<{ pages: Pag
       const msg = document.createElement("p");
       msg.className = "small error-text";
       box.appendChild(msg);
-      const done = (v: { pages: PageChoice; langs: ("tha" | "eng" | "chi_sim")[]; skipText: boolean } | null) => {
+      const done = (v: { pages: PageChoice; ranges: string; langs: ("tha" | "eng" | "chi_sim")[]; skipText: boolean } | null) => {
         close();
         resolve(v);
       };
@@ -722,8 +885,10 @@ export function ocrDialog(selected: number, total: number): Promise<{ pages: Pag
           onClick: () => {
             const langs = [tha.checked && "tha", eng.checked && "eng", chi.checked && "chi_sim"].filter(Boolean) as ("tha" | "eng" | "chi_sim")[];
             if (!langs.length) return void (msg.textContent = "Choose at least one language.");
-            store(OCR_KEY, { pages: pages.value, tha: tha.checked, eng: eng.checked, chi_sim: chi.checked, skipText: skip.checked });
-            done({ pages: pages.value as PageChoice, langs, skipText: skip.checked });
+            const p = pages.value();
+            if (!p) return;
+            store(OCR_KEY, { ...p, tha: tha.checked, eng: eng.checked, chi_sim: chi.checked, skipText: skip.checked });
+            done({ ...p, langs, skipText: skip.checked });
           },
         },
       ]);
@@ -737,7 +902,6 @@ const SHORTCUTS: [string, string][] = [
   ["Ctrl+O", "Open"],
   ["Ctrl+S / Ctrl+Shift+S", "Save / Save as"],
   ["Ctrl+P", "Print"],
-  ["Ctrl+L", "Print shipping labels"],
   ["Ctrl+Z / Ctrl+Y", "Undo / Redo"],
   ["Ctrl+F, Enter / Shift+Enter", "Find, next / previous"],
   ["Ctrl+Shift+F", "Search a folder of PDFs"],

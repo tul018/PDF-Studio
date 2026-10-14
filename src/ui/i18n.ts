@@ -67,6 +67,31 @@ const TH: Dict = {
   Language: "ภาษา", "Night reading (dark pages)": "โหมดกลางคืน (หน้ามืด)", "Reading speed": "ความเร็วการอ่าน", "Reset remembered choices": "ล้างค่าที่จำไว้", Close: "ปิด",
   "Remove the password": "ลบรหัสผ่าน", "Keep the password": "คงรหัสผ่าน", "This PDF is password-protected": "PDF นี้มีรหัสผ่าน", "Password required": "ต้องใช้รหัสผ่าน", Unlock: "ปลดล็อก",
   "Incorrect password — try again": "รหัสผ่านไม่ถูกต้อง ลองอีกครั้ง",
+  // tool settings
+  "Light theme": "ธีมสว่าง", "Dark theme": "ธีมมืด", "Highlight options": "ตัวเลือกไฮไลต์", "Text options": "ตัวเลือกข้อความ",
+  Font: "ฟอนต์", Opacity: "ความทึบ", "Line thickness": "ความหนาเส้น", "Highlight opacity": "ความทึบไฮไลต์", "Highlight color": "สีไฮไลต์",
+  Sans: "ไม่มีเชิง", Serif: "มีเชิง", Mono: "ความกว้างเท่ากัน", Width: "กว้าง", Height: "สูง", Custom: "กำหนดเอง", "Other color": "สีอื่น",
+  "Font size: pick one or type any size": "ขนาดฟอนต์: เลือกหรือพิมพ์ขนาดเอง",
+  "Free — drag any box": "อิสระ — ลากกรอบขนาดใดก็ได้", "Fixed size — same height every time": "ขนาดคงที่ — สูงเท่ากันทุกครั้ง",
+  "Fixed size: click to place a Width × Height highlight, or drag sideways to set the width — the height stays the same.":
+    "ขนาดคงที่: คลิกเพื่อวางไฮไลต์ขนาด กว้าง × สูง หรือลากไปด้านข้างเพื่อกำหนดความกว้าง — ความสูงคงเดิม",
+  "Tip: drag the corner handle of a text box to scale its size.": "เคล็ดลับ: ลากจุดที่มุมกล่องข้อความเพื่อย่อ/ขยายขนาด",
+  "Sans (Helvetica)": "ไม่มีเชิง (Helvetica)", "Serif (Times)": "มีเชิง (Times)", "Mono (Courier)": "ความกว้างเท่ากัน (Courier)",
+  "Standard (smallest file)": "มาตรฐาน (ไฟล์เล็กที่สุด)", "On this computer": "ในเครื่องนี้", "Search fonts…": "ค้นหาฟอนต์…",
+  "Show all fonts on this PC…": "แสดงฟอนต์ทั้งหมดในเครื่องนี้…", "More fonts on this PC…": "ฟอนต์อื่นๆ ในเครื่องนี้…",
+  // page tools
+  "Merge PDFs…": "รวม PDF…", "Merge PDFs": "รวม PDF", Merge: "รวม", "Extract / split pages…": "แยก / แบ่งหน้า…", "Extract / split pages": "แยก / แบ่งหน้า",
+  "Move to page…": "ย้ายไปหน้า…", "Page range…": "ช่วงหน้า…", "Page range": "ช่วงหน้า", Move: "ย้าย", Remove: "เอาออก", Make: "สร้าง",
+  "Chosen pages → one new PDF": "หน้าที่เลือก → PDF ใหม่ 1 ไฟล์", "Each range → its own PDF": "แต่ละช่วง → PDF แยกไฟล์", "Every N pages → its own PDF": "ทุก N หน้า → PDF แยกไฟล์",
+  "Move to page… (type the page number)": "ย้ายไปหน้า… (พิมพ์เลขหน้า)", "Extract / split pages: chosen pages into one PDF, or split into several PDF files": "แยก / แบ่งหน้า: หน้าที่เลือกเป็น PDF เดียว หรือแบ่งเป็นหลายไฟล์ PDF",
+  "Split into several PDF files (by ranges or every N pages)": "แบ่งเป็นหลายไฟล์ PDF (ตามช่วงหน้าหรือทุก N หน้า)",
+  "The files are joined in this order into one new PDF. The originals aren't changed.": "ไฟล์จะถูกรวมตามลำดับนี้เป็น PDF ใหม่ 1 ไฟล์ ไฟล์ต้นฉบับไม่เปลี่ยน",
+  "Choose at least two files to merge.": "เลือกอย่างน้อย 2 ไฟล์เพื่อรวม",
+  // live over the internet
+  "Host over the internet": "เป็นโฮสต์ผ่านอินเทอร์เน็ต", "Host on the same network": "เป็นโฮสต์ในเครือข่ายเดียวกัน", "Invite people": "เชิญผู้อื่น",
+  "Invite an editor": "เชิญผู้แก้ไข", "Invite view-only": "เชิญแบบดูอย่างเดียว", "End session": "จบเซสชัน", "Copy invitation": "คัดลอกคำเชิญ",
+  "2. Paste their reply code": "2. วางรหัสตอบกลับของเขา", "Send this reply code to the host": "ส่งรหัสตอบกลับนี้ให้โฮสต์", "Copy reply code": "คัดลอกรหัสตอบกลับ",
+  "Waiting for the host…": "กำลังรอโฮสต์…", "Nobody has joined yet.": "ยังไม่มีใครเข้าร่วม", "Joining…": "กำลังเข้าร่วม…",
 };
 
 const ZH: Dict = {
@@ -107,6 +132,31 @@ const ZH: Dict = {
   "Trim empty borders around each picture": "裁掉图片四周的空白", "Scan look: clean black & white (receipts, documents)": "扫描效果：清晰黑白（收据、文件）", Language: "语言", "Night reading (dark pages)": "夜间阅读（深色页面）",
   "Reading speed": "朗读速度", "Reset remembered choices": "重置已记住的选项", Close: "关闭", "Remove the password": "删除密码", "Keep the password": "保留密码", "This PDF is password-protected": "此 PDF 受密码保护",
   "Password required": "需要密码", Unlock: "解锁", "Incorrect password — try again": "密码错误，请重试",
+  // tool settings
+  "Light theme": "浅色主题", "Dark theme": "深色主题", "Highlight options": "高亮选项", "Text options": "文字选项",
+  Font: "字体", Opacity: "不透明度", "Line thickness": "线条粗细", "Highlight opacity": "高亮不透明度", "Highlight color": "高亮颜色",
+  Sans: "无衬线", Serif: "衬线", Mono: "等宽", Width: "宽", Height: "高", Custom: "自定义", "Other color": "其他颜色",
+  "Font size: pick one or type any size": "字号：选择或输入任意大小",
+  "Free — drag any box": "自由 — 拖出任意大小", "Fixed size — same height every time": "固定大小 — 每次高度相同",
+  "Fixed size: click to place a Width × Height highlight, or drag sideways to set the width — the height stays the same.":
+    "固定大小：单击放置 宽 × 高 的高亮，或横向拖动设置宽度 — 高度保持不变。",
+  "Tip: drag the corner handle of a text box to scale its size.": "提示：拖动文本框角上的控制点可缩放大小。",
+  "Sans (Helvetica)": "无衬线 (Helvetica)", "Serif (Times)": "衬线 (Times)", "Mono (Courier)": "等宽 (Courier)",
+  "Standard (smallest file)": "标准（文件最小）", "On this computer": "本机字体", "Search fonts…": "搜索字体…",
+  "Show all fonts on this PC…": "显示本机所有字体…", "More fonts on this PC…": "本机更多字体…",
+  // page tools
+  "Merge PDFs…": "合并 PDF…", "Merge PDFs": "合并 PDF", Merge: "合并", "Extract / split pages…": "提取 / 拆分页面…", "Extract / split pages": "提取 / 拆分页面",
+  "Move to page…": "移到第几页…", "Page range…": "页面范围…", "Page range": "页面范围", Move: "移动", Remove: "移除", Make: "生成",
+  "Chosen pages → one new PDF": "所选页面 → 一个新 PDF", "Each range → its own PDF": "每个范围 → 单独的 PDF", "Every N pages → its own PDF": "每 N 页 → 单独的 PDF",
+  "Move to page… (type the page number)": "移到第几页…（输入页码）", "Extract / split pages: chosen pages into one PDF, or split into several PDF files": "提取 / 拆分页面：所选页面合成一个 PDF，或拆分为多个 PDF 文件",
+  "Split into several PDF files (by ranges or every N pages)": "拆分为多个 PDF 文件（按范围或每 N 页）",
+  "The files are joined in this order into one new PDF. The originals aren't changed.": "文件按此顺序合并为一个新 PDF，原文件不变。",
+  "Choose at least two files to merge.": "请至少选择两个文件进行合并。",
+  // live over the internet
+  "Host over the internet": "通过互联网主持", "Host on the same network": "在同一网络中主持", "Invite people": "邀请他人",
+  "Invite an editor": "邀请编辑者", "Invite view-only": "邀请仅查看者", "End session": "结束会话", "Copy invitation": "复制邀请",
+  "2. Paste their reply code": "2. 粘贴对方的回复码", "Send this reply code to the host": "将此回复码发送给主持人", "Copy reply code": "复制回复码",
+  "Waiting for the host…": "正在等待主持人…", "Nobody has joined yet.": "还没有人加入。", "Joining…": "正在加入…",
 };
 
 const TEMPLATES: Record<Exclude<Lang, "en">, Templates> = {

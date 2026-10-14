@@ -233,15 +233,26 @@ function writeOutline(out: PDFDocument, items: OutlineNode[]): void {
 /**
  * Carry document-level structure into a rebuilt document: bookmarks of every
  * source (in order), plus metadata, language and attachments of the first.
+ * With `sections` (merging whole files), each source gets a top bookmark with
+ * that title at its first page, holding the source's own bookmarks, so you
+ * can see which pages came from which file.
  */
 export function copyDocumentStructure(
   out: PDFDocument,
   sources: [docId: string, doc: PDFDocument][],
   target: PageTarget,
+  sections?: string[],
 ): void {
   writeOutline(
     out,
-    sources.flatMap(([id, doc]) => readOutline(doc, id, target)),
+    sources.flatMap(([id, doc], k) => {
+      const items = readOutline(doc, id, target);
+      if (!sections) return items;
+      let first: PDFRef | undefined;
+      for (let i = 0; !first && i < doc.getPageCount(); i++) first = target(id, i);
+      if (!first && !items.length) return [];
+      return [{ title: sections[k] ?? `File ${k + 1}`, dest: first ? [first, N("Fit")] : undefined, open: false, children: items }];
+    }),
   );
   const first = sources[0]?.[1];
   if (!first) return;

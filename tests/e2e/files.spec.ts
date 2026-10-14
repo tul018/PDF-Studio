@@ -25,14 +25,14 @@ async function collectDownloads(page: Page, n: number, act: () => Promise<void>)
 
 test("split into files every 5 pages; bad ranges explained", async ({ page }) => {
   await openPdf(page, "basic.pdf");
-  await page.locator('.pageops [data-page-op="splitFiles"]').click();
-  await page.locator(".modal select").selectOption("ranges");
+  await page.locator('.pageops [data-page-op="extract"]').click();
+  await page.locator(".modal select").first().selectOption("ranges");
   await page.locator(".modal-input").fill("1-3, 20-");
   await expect(page.locator(".modal .error-text")).toContainText("outside pages 1-12");
-  await page.locator(".modal select").selectOption("every");
+  await page.locator(".modal select").first().selectOption("every");
   await page.locator(".modal .num-input").fill("5");
   await expect(page.locator(".modal p.muted.small")).toHaveText("3 files: 1-5, 6-10, 11-12");
-  const files = await collectDownloads(page, 3, () => page.locator(".modal").getByRole("button", { name: "Split", exact: true }).click());
+  const files = await collectDownloads(page, 3, () => page.locator(".modal").getByRole("button", { name: "Save…", exact: true }).click());
   expect(files.map((f) => f.name)).toEqual(["basic p1-5.pdf", "basic p11-12.pdf", "basic p6-10.pdf"]);
   const counts = await Promise.all(files.map(async (f) => (await PDFDocument.load(f.bytes)).getPageCount()));
   expect(counts).toEqual([5, 2, 5]);

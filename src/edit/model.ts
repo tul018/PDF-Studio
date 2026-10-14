@@ -85,6 +85,8 @@ export interface TextAnnot extends AnnotBase {
   text: string;
   fontSize: number;
   color: string;
+  /** Typeface; absent = sans. */
+  font?: TextFont;
 }
 
 export interface ImageAnnot extends AnnotBase {
@@ -261,6 +263,33 @@ export function annotationBounds(a: Annotation): [number, number, number, number
  */
 export const TEXT_FONTS =
   'Helvetica, Arial, "Leelawadee UI", Tahoma, Thonburi, "Noto Sans Thai", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", sans-serif';
+
+/**
+ * Typeface for added text: "sans", "serif" or "mono" (the standard PDF fonts
+ * Helvetica, Times and Courier: small files, readable everywhere), or the
+ * family name of a font installed on this computer (embedded when saving).
+ */
+export type TextFont = string;
+
+export const STANDARD_TEXT_FONTS = ["sans", "serif", "mono"] as const;
+
+export function isStandardFont(f: TextFont | undefined): boolean {
+  return !f || (STANDARD_TEXT_FONTS as readonly string[]).includes(f);
+}
+
+const NON_LATIN = '"Leelawadee UI", Tahoma, Thonburi, "Noto Sans Thai", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC"';
+
+const TEXT_FONT_STACKS: Record<string, string> = {
+  sans: TEXT_FONTS,
+  serif: `"Times New Roman", Times, ${NON_LATIN}, serif`,
+  mono: `"Courier New", Courier, ${NON_LATIN}, monospace`,
+};
+
+/** CSS font-family for a text annotation (Thai and Chinese fall back to system faces). */
+export function textFontCss(a: { font?: TextFont }): string {
+  const f = a.font ?? "sans";
+  return TEXT_FONT_STACKS[f] ?? `"${f.replace(/["\\]/g, "")}", ${NON_LATIN}, sans-serif`;
+}
 
 export function textLines(a: Pick<TextAnnot, "text" | "fontSize">): { text: string; baseline: number }[] {
   return a.text.split("\n").map((text, i) => ({ text, baseline: a.fontSize * (0.95 + i * 1.25) }));
