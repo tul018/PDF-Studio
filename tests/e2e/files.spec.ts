@@ -25,7 +25,7 @@ async function collectDownloads(page: Page, n: number, act: () => Promise<void>)
 
 test("split into files every 5 pages; bad ranges explained", async ({ page }) => {
   await openPdf(page, "basic.pdf");
-  await page.locator('[data-page-op="splitFiles"]').click();
+  await page.locator('.pageops [data-page-op="splitFiles"]').click();
   await page.locator(".modal select").selectOption("ranges");
   await page.locator(".modal-input").fill("1-3, 20-");
   await expect(page.locator(".modal .error-text")).toContainText("outside pages 1-12");
@@ -43,14 +43,14 @@ test("export the current page as PNG and all pages as JPG", async ({ page }) => 
   await openPdf(page, "basic.pdf");
   await page.fill("#page-input", "3");
   await page.press("#page-input", "Enter");
-  await page.locator('[data-page-op="exportImages"]').click();
+  await page.locator('.pageops [data-page-op="exportImages"]').click();
   const [png] = await collectDownloads(page, 1, () => page.locator(".modal").getByRole("button", { name: "Export", exact: true }).click());
   expect(png.name).toBe("basic p03.png");
   expect(png.bytes.subarray(1, 4).toString()).toBe("PNG");
   // 612 x 792 pt at 150 dpi = 1275 x 1650 px.
   expect([png.bytes.readUInt32BE(16), png.bytes.readUInt32BE(20)]).toEqual([1275, 1650]);
 
-  await page.locator('[data-page-op="exportImages"]').click();
+  await page.locator('.pageops [data-page-op="exportImages"]').click();
   await page.locator(".modal select").nth(0).selectOption("all");
   await page.locator(".modal select").nth(1).selectOption("jpeg");
   const jpgs = await collectDownloads(page, 12, () => page.locator(".modal").getByRole("button", { name: "Export", exact: true }).click());

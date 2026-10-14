@@ -6,7 +6,7 @@ export const fixture = (name: string) => join(process.cwd(), "tests", "fixtures"
 
 export async function openPdf(page: Page, name: string): Promise<void> {
   const chooser = page.waitForEvent("filechooser");
-  await page.locator('[data-action="open"]').first().click();
+  await cmd(page, '[data-action="open"]');
   await (await chooser).setFiles(fixture(name));
   await expect(page.locator("body.has-doc")).toBeVisible();
   await expect(page.locator(".page canvas.page-canvas").first()).toBeAttached();
@@ -30,4 +30,15 @@ export async function pageBox(page: Page, n: number) {
   await el.scrollIntoViewIfNeeded();
   const b = (await el.boundingBox())!;
   return b;
+}
+
+/** Run a menu command: open its menu (and submenu), click the item. */
+export async function cmd(page: Page, selector: string): Promise<void> {
+  const item = page.locator(`.menubar ${selector}`).first();
+  if (await item.evaluate((el) => el.classList.contains("menu-top"))) return item.click();
+  const inner = page.locator(selector);
+  await page.locator(".menubar .menu").filter({ has: inner }).locator("> .menu-top").click();
+  const sub = page.locator(".menubar .menu-subwrap").filter({ has: inner });
+  if (await sub.count()) await sub.locator("> .menu-item").hover();
+  await item.click();
 }

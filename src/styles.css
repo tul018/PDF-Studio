@@ -119,6 +119,27 @@ select, .page-input, .modal-input, .searchbar input[type="search"] {
 
 /* ---------------------------------------------------------------- layout */
 .main-bar { grid-row: 1; }
+/* Menu bar (File, Edit, View, Tools, Settings, Help) */
+.menubar { display: flex; align-items: center; gap: 0; margin-right: 6px; }
+.menu { position: relative; }
+.menu-top { border: 0; background: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; color: inherit; font-size: 14px; }
+.menu-top:hover, .menu.open > .menu-top { background: var(--surface-2); }
+.menu-list { display: none; position: absolute; top: 100%; left: 0; z-index: 60; min-width: 240px; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18); }
+.menu.open > .menu-list { display: block; }
+.menu-item { display: flex; align-items: center; gap: 16px; width: 100%; border: 0; background: none; text-align: left; padding: 7px 10px; border-radius: 5px; cursor: pointer; color: inherit; font-size: 13.5px; white-space: nowrap; }
+.menu-item:hover:not(:disabled), .menu-subwrap.open > .menu-item { background: var(--surface-2); }
+.menu-item:disabled { opacity: 0.45; cursor: default; }
+.menu-label { flex: 1; }
+.menu-keys { color: var(--muted); font-size: 12px; }
+.menu-item.has-sub::after { content: "›"; color: var(--muted); }
+.menu-sep { height: 1px; background: var(--border); margin: 4px 6px; }
+.menu-subwrap { position: relative; }
+.menu-subwrap > .submenu { top: -5px; left: 100%; }
+.menu-subwrap.open > .submenu { display: block; }
+.shortcuts { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0; }
+.shortcuts td { padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.shortcuts kbd { white-space: nowrap; }
+.menu-empty { padding: 7px 10px; color: var(--muted); font-size: 13px; }
 .tool-bar { grid-row: 2; }
 .tabbar { grid-row: 3; }
 .main { grid-row: 4; }

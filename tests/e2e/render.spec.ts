@@ -5,9 +5,9 @@ test("rendering engine: switch between graphics card and processor", async ({ pa
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await openPdf(page, "basic.pdf");
-  await page.locator('[data-action="pageNumbers"]').click();
+  await page.locator('.tool-bar [data-action="pageNumbers"]').click();
   await page.getByRole("button", { name: "Add page numbers" }).click();
-  await page.locator('[data-action="settings"]').click();
+  await page.locator('.menubar [data-action="settings"]').click();
   await page.locator(".modal select").nth(3).selectOption("cpu");
   await page.locator(".modal .btn.primary").click();
   await expect(page.locator("#toast")).toContainText("processor (CPU)");

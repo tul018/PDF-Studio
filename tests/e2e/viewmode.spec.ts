@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openPdf } from "./helpers";
+import { openPdf, cmd } from "./helpers";
 
 test("two pages side by side, one page at a time, night pages", async ({ page }) => {
   await page.goto("/");
@@ -13,7 +13,7 @@ test("two pages side by side, one page at a time, night pages", async ({ page })
   expect(b3!.x).toBeGreaterThan(b2!.x + b2!.width - 1); // to the right
   await page.locator("#view-mode").selectOption("single");
   await expect(page.locator(".pane.active .viewer")).toHaveClass(/snap/);
-  await page.locator('[data-action="nightPages"]').click();
+  await cmd(page, '[data-action="nightPages"]');
   await expect(page.locator("body")).toHaveClass(/night-pages/);
   await page.reload();
   await expect(page.locator("#view-mode")).toHaveValue("single"); // remembered

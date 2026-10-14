@@ -38,7 +38,9 @@ import type { Protection } from "./save/encrypt";
 import { imagesToPdf } from "./save/fromImages";
 import { BytesSource } from "./core/source";
 import { currentLanguage, initialLanguage, setLanguage } from "./ui/i18n";
+import { buildMenuBar, type MenuItem } from "./ui/menubar";
 import { ocrPdf } from "./save/ocr";
+import { aboutDialog, shortcutsDialog } from "./ui/decorDialogs";
 import { cutDialog, ocrDialog, protectDialog, photosDialog, settingsDialog, shrinkDialog, exportImagesDialog, pageNumbersDialog, splitDialog, stampDialog, watermarkDialog } from "./ui/decorDialogs";
 import { cutPages } from "./edit/cut";
 import { CompareView } from "./compare/compareView";
@@ -142,6 +144,7 @@ export class App {
   private tool: Tool = "select";
 
   constructor() {
+    buildMenuBar($(".main-bar"), (name) => (name === "recent" ? this.recentMenu() : []));
     this.renderIcons();
     this.panes.push(this.createPane());
     this.panes[0].root.classList.add("active");
@@ -795,6 +798,23 @@ export class App {
       console.error(e);
       toast(`Save failed: ${(e as Error)?.message ?? e}`, "error", 8000);
       return false;
+    }
+  }
+
+  /** Recent files, for File › Open recent (desktop: reopened by path). */
+  private recentMenu(): MenuItem[] {
+    const list = this.platform.kind === "desktop" ? recentFiles() : [];
+    if (!list.length) return [{ label: "No recent files" }];
+    return list.map((r) => ({ label: r.name, run: { action: `recent:${r.path}` } }));
+  }
+
+  private async openRecent(path: string): Promise<void> {
+    try {
+      await this.openSources([await NativeSource.open(path)]);
+    } catch {
+      forgetRecent(path);
+      this.renderRecent();
+      toast("That file was moved or deleted.", "error");
     }
   }
 
@@ -1526,8 +1546,15 @@ export class App {
 
   private bindToolbar(): void {
     document.addEventListener("click", (e) => {
-      const el = (e.target as Element).closest<HTMLElement>("[data-action],[data-tool],[data-page-op]");
+      const el = (e.target as Element).closest<HTMLElement>("[data-action],[data-tool],[data-page-op],[data-pro],[data-view]");
       if (!el || (el as HTMLButtonElement).disabled) return;
+      if (el.dataset.pro) return void this.workbench.run(el.dataset.pro);
+      if (el.dataset.view) {
+        const sel = $<HTMLSelectElement>("#view-mode");
+        sel.value = el.dataset.view;
+        sel.dispatchEvent(new Event("change"));
+        return;
+      }
       if (el.dataset.tool) {
         const t = el.dataset.tool as Tool;
         if (t === "highlight" && this.tool === "select" && this.activePane.overlay.highlightSelection()) return;
@@ -1564,6 +1591,7 @@ export class App {
   }
 
   private action(a: string): void {
+    if (a.startsWith("recent:")) return void this.openRecent(a.slice(7));
     if (a === "professional") return this.workbench.menu();
     if (a === "connector") return void this.connector.toggle();
     if (a === "live") return void this.live.toggle();
@@ -1579,6 +1607,12 @@ export class App {
         return void this.save(true);
       case "print":
         return void this.print();
+      case "closeTab":
+        return void this.closeTab(this.activeTab);
+      case "shortcuts":
+        return shortcutsDialog();
+      case "about":
+        return void aboutDialog();
       case "labels":
         return void this.printLabels();
       case "ocr":

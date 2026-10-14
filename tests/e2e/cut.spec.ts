@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
 
 test("cut the current page into 4 (both cuts), save, undo", async ({ page }) => {
   await openPdf(page, "basic.pdf");
-  await page.locator('[data-page-op="cut"]').click();
+  await page.locator('.pageops [data-page-op="cut"]').click();
   const dlg = page.locator(".cut-dialog");
   await expect(dlg.locator("canvas")).toBeVisible();
   await dlg.getByLabel("Horizontal cut at").check();
@@ -44,7 +44,7 @@ test("cut at 30% on the current page only; search counts only what a piece shows
   // Page 3 has "needle" in its lower half; cut it horizontally at 50%.
   await page.fill("#page-input", "3");
   await page.press("#page-input", "Enter");
-  await page.locator('[data-page-op="cut"]').click();
+  await page.locator('.pageops [data-page-op="cut"]').click();
   const dlg = page.locator(".cut-dialog");
   await dlg.getByLabel("Vertical cut at").uncheck();
   await dlg.getByLabel("Horizontal cut at").check();
@@ -58,7 +58,7 @@ test("cut at 30% on the current page only; search counts only what a piece shows
   // A vertical cut at 30% of page 1.
   await page.fill("#page-input", "1");
   await page.press("#page-input", "Enter");
-  await page.locator('[data-page-op="cut"]').click();
+  await page.locator('.pageops [data-page-op="cut"]').click();
   await dlg.getByLabel("Horizontal cut at").uncheck();
   await dlg.getByLabel("Vertical cut at").check();
   await dlg.locator(".cut-row").first().locator(".num-input").fill("30");

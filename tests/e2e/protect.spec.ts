@@ -1,12 +1,12 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { openPdf } from "./helpers";
+import { openPdf, cmd } from "./helpers";
 
 test("save a password-protected copy (AES-256)", async ({ page }) => {
   await page.goto("/");
   await openPdf(page, "basic.pdf");
-  await page.locator('[data-action="protect"]').click();
+  await cmd(page, '[data-action="protect"]');
   const pw = page.locator(".modal input[type=password]");
   await pw.nth(0).fill("shop2026");
   await pw.nth(1).fill("shop2025");

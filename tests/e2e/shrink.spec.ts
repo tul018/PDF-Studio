@@ -1,13 +1,13 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { PDFDocument } from "pdf-lib";
-import { openPdf } from "./helpers";
+import { openPdf, cmd } from "./helpers";
 
 test("shrink a photo PDF", async ({ page }) => {
   test.setTimeout(240_000);
   await page.goto("/");
   await openPdf(page, "heavy-images.pdf"); // 261 MB, 16 distinct 3200 x 2400 photos
-  await page.locator('[data-action="shrink"]').click();
+  await cmd(page, '[data-action="shrink"]');
   const dl = page.waitForEvent("download", { timeout: 220_000 });
   await page.getByRole("button", { name: "Shrink", exact: true }).click();
   const file = (await (await dl).path())!;

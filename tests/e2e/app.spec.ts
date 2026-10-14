@@ -100,10 +100,10 @@ test("page operations: rotate, delete, insert, reorder", async ({ page }) => {
   await openPdf(page, "basic.pdf");
   const thumb = (n: number) => page.locator(".thumb", { has: page.locator(`.thumb-label:text-is("${n}")`) });
   await thumb(1).click();
-  await page.locator('[data-page-op="rotR"]').click();
+  await page.locator('.pageops [data-page-op="rotR"]').click();
   await thumb(2).click();
-  await page.locator('[data-page-op="delete"]').click();
-  await page.locator('[data-page-op="blank"]').click();
+  await page.locator('.pageops [data-page-op="delete"]').click();
+  await page.locator('.pageops [data-page-op="blank"]').click();
   const bytes = await saveAndRead(page);
   const info = await pageInfo(bytes);
   expect(info).toHaveLength(12);

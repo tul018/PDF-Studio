@@ -730,3 +730,86 @@ export function ocrDialog(selected: number, total: number): Promise<{ pages: Pag
     });
   });
 }
+
+// ------------------------------------------------------------------ help
+
+const SHORTCUTS: [string, string][] = [
+  ["Ctrl+O", "Open"],
+  ["Ctrl+S / Ctrl+Shift+S", "Save / Save as"],
+  ["Ctrl+P", "Print"],
+  ["Ctrl+L", "Print shipping labels"],
+  ["Ctrl+Z / Ctrl+Y", "Undo / Redo"],
+  ["Ctrl+F, Enter / Shift+Enter", "Find, next / previous"],
+  ["Ctrl+Shift+F", "Search a folder of PDFs"],
+  ["Ctrl+= / Ctrl+- / Ctrl+0", "Zoom in / out / fit width"],
+  ["Ctrl+\\", "Split view"],
+  ["M or Ctrl+D", "Mark this position"],
+  ["Home / End", "First / last page"],
+  ["V H U T P R O L A N", "Select, pan, highlight, text, draw, box, circle, line, arrow, comment"],
+  ["Del", "Delete the selected annotation"],
+];
+
+export function shortcutsDialog(): void {
+  modal((box, close) => {
+    title(box, "Keyboard shortcuts");
+    const table = document.createElement("table");
+    table.className = "shortcuts";
+    for (const [k, v] of SHORTCUTS) {
+      const tr = document.createElement("tr");
+      const a = document.createElement("td");
+      const kbd = document.createElement("kbd");
+      kbd.textContent = k;
+      a.appendChild(kbd);
+      const b = document.createElement("td");
+      b.textContent = v;
+      tr.append(a, b);
+      table.appendChild(tr);
+    }
+    box.appendChild(table);
+    escClose(box, close);
+    buttons(box, [{ label: "Close", primary: true, onClick: close }]);
+  });
+}
+
+const CREDITS: [string, string, string][] = [
+  ["PDF.js", "Mozilla", "Apache-2.0"],
+  ["pdf-lib", "Andrew Dillon", "MIT"],
+  ["Tesseract OCR / tesseract.js", "Google, Tesseract contributors", "Apache-2.0"],
+  ["Tauri", "Tauri Programme", "MIT / Apache-2.0"],
+  ["Yjs", "Kevin Jahns", "MIT"],
+  ["docx", "Dolan Miu", "MIT"],
+  ["fflate", "Arjun Barrett", "MIT"],
+  ["jsQR / qrcode", "Cosmo Wolfe; Ryan Day", "Apache-2.0; MIT"],
+  ["node-forge", "Digital Bazaar", "BSD-3-Clause"],
+  ["Compact ICC Profiles (sRGB)", "Clinton Ingram", "CC0"],
+];
+
+export async function aboutDialog(): Promise<void> {
+  let version = "";
+  try {
+    if ("__TAURI_INTERNALS__" in window) version = await (await import("@tauri-apps/api/app")).getVersion();
+  } catch {
+    /* browser build */
+  }
+  modal((box, close) => {
+    title(box, "PDF Studio", `${version ? `Version ${version}. ` : ""}A fast, stable PDF viewer and editor for Windows and iOS: Thai, Chinese and English.`);
+    const p = document.createElement("p");
+    p.className = "muted small";
+    p.textContent = "Built by tul018 with help from Claude (Anthropic) and ChatGPT (OpenAI). It uses these open-source projects:";
+    box.appendChild(p);
+    const table = document.createElement("table");
+    table.className = "shortcuts";
+    for (const [name, by, lic] of CREDITS) {
+      const tr = document.createElement("tr");
+      for (const t of [name, by, lic]) {
+        const td = document.createElement("td");
+        td.textContent = t;
+        tr.appendChild(td);
+      }
+      table.appendChild(tr);
+    }
+    box.appendChild(table);
+    escClose(box, close);
+    buttons(box, [{ label: "Close", primary: true, onClick: close }]);
+  });
+}

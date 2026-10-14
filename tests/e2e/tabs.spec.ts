@@ -5,7 +5,7 @@ test("tabs: two files open, edits kept when switching, close a tab", async ({ pa
   page.on("pageerror", (e) => console.log("PAGE ERROR:", e.message));
   await page.goto("/");
   await openPdf(page, "basic.pdf");
-  await page.locator('[data-action="pageNumbers"]').click();
+  await page.locator('.tool-bar [data-action="pageNumbers"]').click();
   await page.getByRole("button", { name: "Add page numbers" }).click();
   await page.fill("#page-input", "7");
   await page.press("#page-input", "Enter");
