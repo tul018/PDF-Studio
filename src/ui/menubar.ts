@@ -48,6 +48,7 @@ export const MENUS: Menu[] = [
           { label: "Pages from other PDF…", run: { pageOp: "merge" }, needsDoc: true },
           { label: "Image…", run: { action: "image" }, needsDoc: true },
           { label: "Blank page", run: { pageOp: "blank" }, needsDoc: true },
+          { label: "Form data (CSV / JSON)…", run: { action: "importForm" }, needsDoc: true },
         ],
       },
       {
@@ -57,6 +58,7 @@ export const MENUS: Menu[] = [
           { label: "Pages as images (PNG/JPG)…", run: { pageOp: "exportImages" }, needsDoc: true },
           { label: "Extract / split pages…", run: { pageOp: "extract" }, needsDoc: true },
           "-",
+          { label: "Form data (CSV)…", run: { action: "exportForm" }, needsDoc: true },
           { label: "Word document…", run: { pro: "word" }, needsDoc: true },
           { label: "Excel workbook…", run: { pro: "excel" }, needsDoc: true },
           { label: "PDF/A archive copy…", run: { pro: "archive" }, needsDoc: true },

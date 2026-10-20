@@ -19,6 +19,7 @@ import {
   TEXT_FONTS,
   uid,
   type Annotation,
+  type FormValue,
   pageLabel,
   type EditState,
   type PageRef,
@@ -42,6 +43,9 @@ import { currentLanguage, initialLanguage, setLanguage } from "./ui/i18n";
 import { buildMenuBar, type MenuItem } from "./ui/menubar";
 import { openPalette } from "./ui/palette";
 import { attachmentsDialog, layersDialog } from "./ui/docExtras";
+import { calculate, type FormScripts } from "./forms/calc";
+import { readFormScripts } from "./forms/scripts";
+import { formValueFor, parseFormData, toCsv, type FieldInfo } from "./forms/formData";
 import { CommentsPanel, savedAuthor } from "./viewer/commentsPanel";
 import { ToolOptionsUI } from "./ui/toolOptions";
 import { ocrPdf } from "./save/ocr";
@@ -130,6 +134,9 @@ export class App {
   private lastLabels: EditState["pageLabels"];
   /** View › Layers: visibility per document, once changed. */
   private layerConfigs = new Map<string, Promise<unknown>>();
+  /** Form calculations per document (null: none), and the values last calculated from. */
+  private formScripts = new Map<string, Promise<FormScripts | null>>();
+  private lastFormValues: EditState["formValues"] | null = null;
   private pageClip: { pages: PageRef[]; annotations: Annotation[] } | null = null;
   /** Next open goes to a given place (folder search result): skip restoring the last position. */
   private skipRestoreView = false;
@@ -748,6 +755,7 @@ export class App {
     this.marks.clear();
     this.pageClip = null; // its pages belong to the documents closing now
     this.layerConfigs.clear();
+    this.formScripts.clear();
     await this.store.closeAll();
     this.mainDoc = null;
     $("#outline").replaceChildren();
@@ -806,6 +814,10 @@ export class App {
     }
     this.updateChrome();
     if (this.comments && !$('[data-panel="comments"]').hidden) this.comments.render();
+    if (s.formValues !== this.lastFormValues) {
+      this.lastFormValues = s.formValues;
+      void this.recalculate(s);
+    }
     if (s.pageLabels !== this.lastLabels) {
       this.lastLabels = s.pageLabels;
       this.thumbs.refreshLabels();
@@ -1295,6 +1307,98 @@ export class App {
     });
     this.history.push({ ...s, pages });
     this.setTool("select");
+  }
+
+  /** Field names, types and the file's own values, of a document's form. */
+  private async formFields(docId: string): Promise<{ fields: FieldInfo[]; initial: Map<string, unknown> }> {
+    const doc = this.store.docs.get(docId);
+    const objs = ((await doc?.pdf.getFieldObjects()) ?? new Map()) as Map<string, { type?: string; value?: unknown }[]>;
+    const fields: FieldInfo[] = [];
+    const initial = new Map<string, unknown>();
+    type FieldObj = { type?: string; value?: unknown };
+    const entries: [string, FieldObj[]][] = objs instanceof Map ? [...objs] : Object.entries(objs as Record<string, FieldObj[]>);
+    for (const [name, list] of entries) {
+      const type = list.find((o) => o.type)?.type ?? "";
+      if (!type || type === "button" || type === "signature") continue;
+      fields.push({ name, type });
+      const v = list.find((o) => o.value !== undefined && o.value !== "")?.value;
+      initial.set(name, type === "checkbox" ? v !== undefined && v !== "Off" : v);
+    }
+    return { fields, initial };
+  }
+
+  /** A form value changed: fill in the fields its formulas calculate (no extra undo step). */
+  private async recalculate(s: EditState): Promise<void> {
+    const docs = new Set(Object.keys(s.formValues).map((k) => k.slice(0, k.indexOf("|"))));
+    let patch: Record<string, FormValue> | null = null;
+    for (const docId of docs) {
+      let p = this.formScripts.get(docId);
+      if (!p) {
+        const doc = this.store.docs.get(docId);
+        p = doc ? doc.source.readAll().then((b) => readFormScripts(b)).catch(() => null) : Promise.resolve(null);
+        this.formScripts.set(docId, p);
+      }
+      const scripts = await p;
+      if (!scripts?.order.length) continue;
+      const { initial } = await this.formFields(docId);
+      const out = calculate(scripts, (name) => s.formValues[`${docId}|${name}`] ?? initial.get(name));
+      for (const [name, v] of out) {
+        const key = `${docId}|${name}`;
+        if (s.formValues[key] !== v && !(s.formValues[key] === undefined && initial.get(name) === v)) (patch ??= {})[key] = v;
+      }
+    }
+    // Only onto the state it was calculated from; a newer edit recalculates itself.
+    if (patch && this.history.state === s) this.history.replace({ ...s, formValues: { ...s.formValues, ...patch } });
+  }
+
+  /** File › Export › Form data: field names and values as a CSV (opens in Excel). */
+  private async exportFormData(): Promise<void> {
+    const doc = this.mainDoc;
+    if (!doc) return;
+    const { fields, initial } = await this.formFields(doc.id);
+    if (!fields.length) return void toast("This document has no form fields.", "info");
+    const s = this.history.state;
+    const csv = toCsv(fields, (n) => (s.formValues[`${doc.id}|${n}`] ?? initial.get(n)) as FormValue | undefined);
+    const bytes = new TextEncoder().encode(csv);
+    const name = doc.source.name.replace(/.pdf$/i, "") + " form data.csv";
+    async function* one() {
+      yield { name, bytes, mime: "text/csv" };
+    }
+    const r = await this.platform.saveMany(one(), this.outputBase().folder);
+    if (r) toast(`Saved ${fields.length} fields to ${name}`, "ok", 5000);
+  }
+
+  /** File › Import › Form data: fill the form from a CSV (first data row) or JSON file. */
+  private async importFormData(): Promise<void> {
+    const doc = this.mainDoc;
+    if (!doc) return;
+    const file = await new Promise<File | null>((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".csv,.json,text/csv,application/json";
+      input.addEventListener("change", () => resolve(input.files?.[0] ?? null));
+      input.addEventListener("cancel", () => resolve(null));
+      input.click();
+    });
+    if (!file) return;
+    try {
+      const data = parseFormData(await file.text());
+      const { fields } = await this.formFields(doc.id);
+      const types = new Map(fields.map((f) => [f.name, f.type]));
+      const formValues = { ...this.history.state.formValues };
+      let n = 0;
+      for (const [name, v] of Object.entries(data)) {
+        const type = types.get(name);
+        if (type === undefined) continue;
+        formValues[`${doc.id}|${name}`] = formValueFor(type, v);
+        n++;
+      }
+      if (!n) return void toast("None of the names in the file match this form's fields.", "error", 6000);
+      this.history.push({ ...this.history.state, formValues });
+      toast(`Filled ${n} field${n === 1 ? "" : "s"} from ${file.name}.`, "ok", 5000);
+    } catch (e) {
+      toast(`Couldn't read ${file.name}: ${(e as Error).message}`, "error", 7000);
+    }
   }
 
   /** View › Layers for the main document. */
@@ -1862,6 +1966,10 @@ export class App {
       case "snapshot":
         this.setTool("snapshot");
         return void toast("Drag a frame around the part to copy as a picture.", "info", 4000);
+      case "exportForm":
+        return void this.exportFormData();
+      case "importForm":
+        return void this.importFormData();
       case "layers":
         return void this.showLayers();
       case "attachments":
