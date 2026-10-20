@@ -147,6 +147,7 @@ export const MENUS: Menu[] = [
   {
     label: "Help",
     items: [
+      { label: "Find a command…", run: { action: "palette" }, keys: "Ctrl+K" },
       { label: "Keyboard shortcuts", run: { action: "shortcuts" } },
       { label: "Check for updates…", run: { action: "updates" } },
       "-",
@@ -168,6 +169,7 @@ function itemEl(it: MenuItem, dyn: (name: string) => MenuItem[]): HTMLElement {
   const label = document.createElement("span");
   label.className = "menu-label";
   label.textContent = it.label;
+  b.dataset.label = it.label; // English name, for the command palette
   b.appendChild(label);
   if (it.run?.action) b.dataset.action = it.run.action;
   if (it.run?.pageOp) b.dataset.pageOp = it.run.pageOp;

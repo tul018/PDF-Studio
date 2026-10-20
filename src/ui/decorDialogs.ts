@@ -899,6 +899,7 @@ export function ocrDialog(selected: number, total: number): Promise<{ pages: Pag
 // ------------------------------------------------------------------ help
 
 const SHORTCUTS: [string, string][] = [
+  ["Ctrl+K", "Find a command"],
   ["Ctrl+O", "Open"],
   ["Ctrl+S / Ctrl+Shift+S", "Save / Save as"],
   ["Ctrl+P", "Print"],

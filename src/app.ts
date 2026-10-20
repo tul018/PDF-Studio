@@ -38,6 +38,7 @@ import { imagesToPdf } from "./save/fromImages";
 import { BytesSource } from "./core/source";
 import { currentLanguage, initialLanguage, setLanguage } from "./ui/i18n";
 import { buildMenuBar, type MenuItem } from "./ui/menubar";
+import { openPalette } from "./ui/palette";
 import { ToolOptionsUI } from "./ui/toolOptions";
 import { ocrPdf } from "./save/ocr";
 import { aboutDialog, shortcutsDialog } from "./ui/decorDialogs";
@@ -1660,6 +1661,8 @@ export class App {
         return void this.print();
       case "revert":
         return void this.revert();
+      case "palette":
+        return openPalette();
       case "closeTab":
         return void this.closeTab(this.activeTab);
       case "shortcuts":
@@ -1783,8 +1786,13 @@ export class App {
   private bindKeyboard(): void {
     window.addEventListener("keydown", (e) => {
       const t = e.target as HTMLElement;
-      if (t.closest("input, textarea, select, [contenteditable=true], .modal")) return;
       const mod = e.ctrlKey || e.metaKey;
+      // Ctrl+K works even while typing in a box (not inside dialogs).
+      if (mod && !e.shiftKey && e.key.toLowerCase() === "k" && !t.closest(".modal")) {
+        e.preventDefault();
+        return openPalette();
+      }
+      if (t.closest("input, textarea, select, [contenteditable=true], .modal")) return;
       const k = e.key.toLowerCase();
       const v = this.activeViewer;
       if (mod) {
