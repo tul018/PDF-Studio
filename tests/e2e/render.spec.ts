@@ -8,10 +8,15 @@ test("rendering engine: switch between graphics card and processor", async ({ pa
   await page.locator('.tool-bar [data-action="pageNumbers"]').click();
   await page.getByRole("button", { name: "Add page numbers" }).click();
   await page.locator('.menubar [data-action="settings"]').click();
-  await page.locator(".modal select").nth(3).selectOption("cpu");
+  // Automatic is the default; switch to whichever engine it didn't pick here.
+  const engine = page.locator(".modal select").nth(3);
+  await expect(engine).toHaveValue("auto");
+  const autoIsCpu = (await engine.locator('option[value="auto"]').textContent())!.includes("processor");
+  const target = autoIsCpu ? "gpu" : "cpu";
+  await engine.selectOption(target);
   await page.locator(".modal .btn.primary").click();
-  await expect(page.locator("#toast")).toContainText("processor (CPU)");
+  await expect(page.locator("#toast")).toContainText(target === "cpu" ? "processor (CPU)" : "graphics card (GPU)");
   await expect(page.locator('.pane.active .page[data-page-number="1"]:not(.loading) canvas.page-canvas')).toBeAttached();
   expect((await stats(page)).annotations).toBe(12); // unsaved edits kept through the reload
-  expect(await page.evaluate(() => localStorage.getItem("pdfstudio:render"))).toBe("cpu");
+  expect(await page.evaluate(() => localStorage.getItem("pdfstudio:render"))).toBe(target);
 });

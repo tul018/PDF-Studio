@@ -1,6 +1,7 @@
 import type { AnnotationOverlay, HighlightMode, Tool, ToolOptions } from "../edit/overlay";
 import { textFontCss, type Annotation, type TextFont } from "../edit/model";
 import { canListAllFonts, installedFonts, loadAllFonts, loadFontsIfAllowed } from "./systemFonts";
+import { headsOf, shapePath, type HeadStyle, type ShapeFill, type ShapeSpec } from "../edit/shapes";
 
 /**
  * The tool settings strip (only what the current tool or selection uses:
@@ -10,7 +11,7 @@ import { canListAllFonts, installedFonts, loadAllFonts, loadFontsIfAllowed } fro
  */
 
 const KEY = "pdfstudio:toolopts";
-const LINE_TOOLS: Tool[] = ["ink", "rect", "ellipse", "cloud", "line", "arrow"];
+const LINE_TOOLS: Tool[] = ["ink", "rect", "ellipse", "shape", "line", "arrow"];
 export const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72];
 const HL_COLORS = ["#ffeb3b", "#a5d6a7", "#81d4fa", "#f8bbd0", "#ffcc80"];
 const TEXT_COLORS = ["#000000", "#e53935", "#1e63d6", "#2e7d32", "#6a1b9a"];
@@ -52,7 +53,10 @@ export class ToolOptionsUI {
         e.stopPropagation();
         const t = b.dataset.toolMenu as Tool;
         if (this.pop?.dataset.popTool === t) return this.closeMenu();
-        if (this.tool() !== t) this.setTool(t);
+        // With one of its kind selected, the menu edits that one (switching tool would deselect it).
+        const sel = this.selected()?.type;
+        const edits = { shape: ["shape", "cloud"], arrow: ["arrow", "line"], highlight: ["highlight"], text: ["text"] } as Record<string, string[]>;
+        if (this.tool() !== t && !(sel && edits[t]?.includes(sel))) this.setTool(t);
         this.openMenu(t, b);
       }),
     );
@@ -82,7 +86,7 @@ export class ToolOptionsUI {
     if (a) {
       if (a.type === "highlight") return "hl";
       if (a.type === "text") return "text";
-      if (a.type === "ink" || a.type === "line" || a.type === "arrow" || a.type === "rect" || a.type === "ellipse" || a.type === "cloud") return "line";
+      if (a.type === "ink" || a.type === "line" || a.type === "arrow" || a.type === "rect" || a.type === "ellipse" || a.type === "cloud" || a.type === "shape") return "line";
       return "";
     }
     const t = this.tool();
@@ -107,6 +111,10 @@ export class ToolOptionsUI {
     if (patch.strokeWidth !== undefined) style.strokeWidth = patch.strokeWidth;
     if (patch.fontSize !== undefined) style.fontSize = patch.fontSize;
     if (patch.font !== undefined) style.font = patch.font;
+    if (patch.shape) style.shape = patch.shape;
+    if (patch.shapeFill) style.shapeFill = patch.shapeFill;
+    if (patch.arrowStart) style.arrowStart = patch.arrowStart;
+    if (patch.arrowEnd) style.arrowEnd = patch.arrowEnd;
     if (Object.keys(style).length) for (const o of this.overlays()) o.styleSelected(style);
     this.sync();
   }
@@ -180,7 +188,7 @@ export class ToolOptionsUI {
     pop.className = "tool-pop";
     pop.dataset.popTool = t; // not data-tool: that would make clicks inside count as clicking the tool button
     pop.setAttribute("role", "dialog");
-    pop.setAttribute("aria-label", t === "highlight" ? "Highlight options" : "Text options");
+    pop.setAttribute("aria-label", t === "highlight" ? "Highlight options" : t === "shape" ? "Shape options" : t === "arrow" ? "Arrow heads" : "Text options");
     document.body.appendChild(pop);
     this.pop = pop;
     anchor.setAttribute("aria-expanded", "true");
@@ -210,6 +218,8 @@ export class ToolOptionsUI {
     const o = this.opts;
     const a = this.selected();
     pop.replaceChildren();
+    if (t === "shape") return this.shapeMenu(pop);
+    if (t === "arrow") return this.arrowMenu(pop);
     if (t === "highlight") {
       const color = a?.type === "highlight" ? a.color : o.highlightColor;
       const op = a?.type === "highlight" ? a.opacity : o.highlightOpacity;
@@ -261,6 +271,109 @@ export class ToolOptionsUI {
       pop.append(grid, row, heading("Color"), swatches(TEXT_COLORS, color, (c) => this.set({ color: c })));
       pop.append(note("Tip: drag the corner handle of a text box to scale its size."));
     }
+  }
+
+  /** Shape tool: which outline, corners / points, star depth, fill. Applies to a selected shape too. */
+  private shapeMenu(pop: HTMLElement): void {
+    const a = this.selected();
+    const spec: ShapeSpec = a?.type === "shape" && a.spec ? a.spec : this.opts.shape;
+    const fill: ShapeFill = a?.type === "shape" ? (a.fill ?? "none") : this.opts.shapeFill;
+    const color = a && "color" in a ? a.color : this.opts.color;
+    const put = (p: Partial<ShapeSpec>) => this.set({ shape: { ...spec, ...p } });
+    const grid = document.createElement("div");
+    grid.className = "pop-shapes";
+    const tile = (label: string, s: ShapeSpec, on: boolean) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "shape-tile";
+      b.title = label;
+      b.classList.toggle("on", on);
+      b.innerHTML = `<svg viewBox="-2 -2 28 28" width="30" height="30"><g transform="translate(0,24) scale(1,-1)"><path d="${shapePath(s, 24, 24)}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></g></svg><span>${label}</span>`;
+      b.addEventListener("click", () => this.set({ shape: s }));
+      return b;
+    };
+    // Ready-made: triangle, diamond, pentagon, hexagon, octagon, stars, heart, cloud.
+    const presets: [string, ShapeSpec][] = [
+      ["Triangle", { kind: "polygon", sides: 3, inner: spec.inner }],
+      ["Diamond", { kind: "polygon", sides: 4, inner: spec.inner }],
+      ["Pentagon", { kind: "polygon", sides: 5, inner: spec.inner }],
+      ["Hexagon", { kind: "polygon", sides: 6, inner: spec.inner }],
+      ["Octagon", { kind: "polygon", sides: 8, inner: spec.inner }],
+      ["Star", { kind: "star", sides: 5, inner: 0.45 }],
+      ["Star 6", { kind: "star", sides: 6, inner: 0.55 }],
+      ["Burst", { kind: "star", sides: 12, inner: 0.7 }],
+      ["Heart", { kind: "heart", sides: spec.sides, inner: spec.inner }],
+      ["Cloud", { kind: "cloud", sides: spec.sides, inner: spec.inner }],
+    ];
+    for (const [label, s] of presets) {
+      const same = s.kind === spec.kind && (s.kind === "heart" || s.kind === "cloud" || (s.sides === spec.sides && (s.kind !== "star" || Math.abs(s.inner - spec.inner) < 0.01)));
+      grid.append(tile(label, s, same));
+    }
+    pop.append(heading("Shape"), grid);
+    if (spec.kind === "polygon" || spec.kind === "star") {
+      const row = document.createElement("div");
+      row.className = "pop-row";
+      row.append(numberField(spec.kind === "star" ? "Points" : "Corners", spec.sides, 3, 12, (v) => put({ sides: Math.round(v) })));
+      pop.append(row);
+    }
+    if (spec.kind === "star") {
+      pop.append(
+        heading("Point depth"),
+        range(Math.round((1 - spec.inner) * 100), 10, 80, (v, done) => {
+          if (done) put({ inner: 1 - v / 100 });
+        }),
+      );
+    }
+    pop.append(
+      heading("Fill"),
+      choice<ShapeFill>(
+        [
+          ["none", "Outline only"],
+          ["light", "Light fill"],
+          ["solid", "Solid fill"],
+        ],
+        fill,
+        (f) => this.set({ shapeFill: f }),
+      ),
+      heading("Color"),
+      swatches(TEXT_COLORS, color, (c) => this.set({ color: c })),
+    );
+    pop.append(note("Drag on the page to draw. Line thickness is in the strip above."));
+  }
+
+  /** Arrow tool: the head at each end (both, one, or none). Applies to a selected arrow too. */
+  private arrowMenu(pop: HTMLElement): void {
+    const a = this.selected();
+    const [start, end] = a && (a.type === "arrow" || a.type === "line") ? headsOf(a) : [this.opts.arrowStart, this.opts.arrowEnd];
+    const heads: [HeadStyle, string][] = [
+      ["none", "None"],
+      ["open", "Open ›"],
+      ["closed", "Filled ▶"],
+      ["circle", "Dot ●"],
+      ["bar", "Bar |"],
+    ];
+    const quick = document.createElement("div");
+    quick.className = "pop-choice";
+    const q = (label: string, s: HeadStyle, e: HeadStyle) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      b.classList.toggle("on", s === start && e === end);
+      b.addEventListener("click", () => this.set({ arrowStart: s, arrowEnd: e }));
+      quick.append(b);
+    };
+    q("→  One head", "none", "open");
+    q("↔  Both heads", "open", "open");
+    q("▶  Filled head", "none", "closed");
+    q("—  No heads", "none", "none");
+    pop.append(
+      heading("Arrow"),
+      quick,
+      heading("Start"),
+      choice<HeadStyle>(heads, start, (s) => this.set({ arrowStart: s }), true),
+      heading("End"),
+      choice<HeadStyle>(heads, end, (e) => this.set({ arrowEnd: e }), true),
+    );
   }
 
   private currentFont(): TextFont {
@@ -368,6 +481,12 @@ function sanitize(s: Partial<ToolOptions>): Partial<ToolOptions> {
   if (num(s.highlightH, 2, 500)) out.highlightH = s.highlightH;
   if (s.highlightMode === "free" || s.highlightMode === "fixed") out.highlightMode = s.highlightMode;
   if (typeof s.font === "string" && s.font.length > 0 && s.font.length < 100) out.font = s.font;
+  const heads = ["none", "open", "closed", "circle", "bar"];
+  if (heads.includes(s.arrowStart as string)) out.arrowStart = s.arrowStart;
+  if (heads.includes(s.arrowEnd as string)) out.arrowEnd = s.arrowEnd;
+  if (s.shapeFill === "none" || s.shapeFill === "light" || s.shapeFill === "solid") out.shapeFill = s.shapeFill;
+  const sh = s.shape;
+  if (sh && ["cloud", "polygon", "star", "heart"].includes(sh.kind) && num(sh.sides, 3, 12) && num(sh.inner, 0.1, 0.95)) out.shape = { kind: sh.kind, sides: sh.sides, inner: sh.inner };
   return out;
 }
 

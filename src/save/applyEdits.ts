@@ -24,6 +24,7 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
+import { DEFAULT_SHAPE, headPart, headsOf, shapePath } from "../edit/shapes";
 import { cloudPath, rotVec, textLines, type PageLabelRule, type Annotation, type Box, type FormValue, type TextFont } from "../edit/model";
 import { saveEncrypted, type Protection } from "./encrypt";
 import { copyDocumentStructure, detachPageLinks, pruneUnreachable, relinkPage, type PageTarget } from "./structure";
@@ -391,6 +392,20 @@ async function drawAnnotation(
       });
       return;
     }
+    case "shape": {
+      const { x, y } = corner(a.box, 0, 0);
+      const fill = a.fill ?? "none";
+      page.drawSvgPath(shapePath(a.spec ?? DEFAULT_SHAPE, a.box.w, a.box.h, true), {
+        x,
+        y,
+        rotate: degrees(a.box.rot),
+        borderColor: hexToRgb(a.color),
+        borderWidth: a.strokeWidth,
+        borderOpacity: a.opacity,
+        ...(fill === "none" ? {} : { color: hexToRgb(a.color), opacity: fill === "light" ? 0.25 : a.opacity }),
+      });
+      return;
+    }
     case "cloud": {
       const { x, y } = corner(a.box, 0, 0);
       page.drawSvgPath(cloudPath(a.box.w, a.box.h, true), {
@@ -424,12 +439,15 @@ async function drawAnnotation(
       const line = (x1: number, y1: number, x2: number, y2: number) =>
         page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness: a.width, color, lineCap: LineCapStyle.Round });
       line(a.x1, a.y1, a.x2, a.y2);
-      if (a.type === "arrow") {
-        const ang = Math.atan2(a.y2 - a.y1, a.x2 - a.x1);
-        const len = Math.max(8, a.width * 4);
-        for (const s of [-Math.PI / 7, Math.PI / 7]) {
-          line(a.x2, a.y2, a.x2 - len * Math.cos(ang + s), a.y2 - len * Math.sin(ang + s));
-        }
+      const [hs, he] = headsOf(a);
+      for (const part of [headPart(hs, a.x2, a.y2, a.x1, a.y1, a.width), headPart(he, a.x1, a.y1, a.x2, a.y2, a.width)]) {
+        if (!part) continue;
+        if (part.kind === "circle") page.drawCircle({ x: part.cx, y: part.cy, size: part.r, color });
+        else if (part.kind === "fill") {
+          // drawSvgPath flips y, so feed it -y.
+          const d = part.points.map(([px, py], i) => `${i ? "L" : "M"} ${px} ${-py}`).join(" ") + " Z";
+          page.drawSvgPath(d, { x: 0, y: 0, color, borderColor: color, borderWidth: a.width });
+        } else for (let i = 1; i < part.points.length; i++) line(part.points[i - 1][0], part.points[i - 1][1], part.points[i][0], part.points[i][1]);
       }
       return;
     }

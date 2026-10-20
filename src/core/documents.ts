@@ -26,12 +26,46 @@ const assetBase = new URL("pdfjs/", document.baseURI).href;
  * draws badly or crashes). Settings › Rendering.
  */
 export type RenderEngine = "gpu" | "cpu";
-export function renderEngine(): RenderEngine {
+/** The setting: a fixed engine, or "auto" (the default) = whatever this PC has. */
+export type RenderSetting = RenderEngine | "auto";
+
+export function renderSetting(): RenderSetting {
   try {
-    return localStorage.getItem("pdfstudio:render") === "cpu" ? "cpu" : "gpu";
+    const v = localStorage.getItem("pdfstudio:render");
+    return v === "gpu" || v === "cpu" ? v : "auto";
   } catch {
-    return "gpu";
+    return "auto";
   }
+}
+
+let detected: RenderEngine | null = null;
+/**
+ * Is there a real graphics card? WebGL that refuses a "major performance
+ * caveat" means drawing would fall back to software, and a software renderer
+ * (SwiftShader, llvmpipe, Microsoft Basic Render Driver) is no GPU either.
+ */
+export function detectGpu(): RenderEngine {
+  if (detected) return detected;
+  detected = "cpu";
+  try {
+    const c = document.createElement("canvas");
+    const gl = (c.getContext("webgl2", { failIfMajorPerformanceCaveat: true }) ??
+      c.getContext("webgl", { failIfMajorPerformanceCaveat: true })) as WebGLRenderingContext | null;
+    if (gl) {
+      const info = gl.getExtension("WEBGL_debug_renderer_info");
+      const name = String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+      detected = /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name) ? "cpu" : "gpu";
+      gl.getExtension("WEBGL_lose_context")?.loseContext();
+    }
+  } catch {
+    /* no WebGL: processor */
+  }
+  return detected;
+}
+
+export function renderEngine(): RenderEngine {
+  const s = renderSetting();
+  return s === "auto" ? detectGpu() : s;
 }
 /** A page canvas drawn by the chosen engine (willReadFrequently forces software drawing). */
 export function pageContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D | null {

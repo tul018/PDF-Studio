@@ -788,7 +788,9 @@ export interface SettingsValues {
   viewMode: "continuous" | "single" | "spread";
   night: boolean;
   readRate: number;
-  render: "gpu" | "cpu";
+  render: "auto" | "gpu" | "cpu";
+  /** What Automatic picked on this PC. */
+  detected?: "gpu" | "cpu";
 }
 
 export function settingsDialog(v: SettingsValues): Promise<(SettingsValues & { reset: boolean }) | null> {
@@ -826,6 +828,7 @@ export function settingsDialog(v: SettingsValues): Promise<(SettingsValues & { r
       row(box, "Reading speed", rate);
       const render = select(
         [
+          ["auto", `Automatic (this PC: ${v.detected === "cpu" ? "processor" : "graphics card"})`],
           ["gpu", "Graphics card (GPU)"],
           ["cpu", "Processor (CPU)"],
         ],
@@ -842,7 +845,7 @@ export function settingsDialog(v: SettingsValues): Promise<(SettingsValues & { r
                 viewMode: view.value as SettingsValues["viewMode"],
                 night: night.checked,
                 readRate: Number(rate.value) || 1,
-                render: render.value as "gpu" | "cpu",
+                render: render.value as "auto" | "gpu" | "cpu",
                 reset,
               }
             : null,

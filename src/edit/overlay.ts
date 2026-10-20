@@ -19,6 +19,7 @@ import {
   type TextAnnot,
   type TextFont,
 } from "./model";
+import { DEFAULT_SHAPE, headPart, headsOf, shapePath, type HeadStyle, type ShapeFill, type ShapeSpec } from "./shapes";
 import type { Decorator, Slot, Viewer } from "../viewer/viewer";
 
 export type Tool =
@@ -27,7 +28,7 @@ export type Tool =
   | "highlight"
   | "rect"
   | "ellipse"
-  | "cloud"
+  | "shape"
   | "eraser"
   | "crop"
   | "zoomArea"
@@ -57,6 +58,12 @@ export interface ToolOptions {
   /** Fixed highlight size in points. */
   highlightW: number;
   highlightH: number;
+  /** Shape tool: outline and fill. */
+  shape: ShapeSpec;
+  shapeFill: ShapeFill;
+  /** Arrow tool: heads at the start and the end. */
+  arrowStart: HeadStyle;
+  arrowEnd: HeadStyle;
 }
 
 export function defaultToolOptions(): ToolOptions {
@@ -70,6 +77,10 @@ export function defaultToolOptions(): ToolOptions {
     highlightMode: "free",
     highlightW: 120,
     highlightH: 14,
+    shape: { ...DEFAULT_SHAPE },
+    shapeFill: "none",
+    arrowStart: "none",
+    arrowEnd: "open",
   };
 }
 
@@ -78,7 +89,7 @@ export interface SearchHitProvider {
 }
 
 const SVGNS = "http://www.w3.org/2000/svg";
-const SHAPE_TOOLS: Tool[] = ["highlight", "rect", "ellipse", "cloud", "whiteout", "redact"];
+const SHAPE_TOOLS: Tool[] = ["highlight", "rect", "ellipse", "shape", "whiteout", "redact"];
 
 function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}) {
   const el = document.createElementNS(SVGNS, tag);
@@ -158,11 +169,15 @@ export class AnnotationOverlay implements Decorator {
 
   /** Recolor / restyle the selected annotation. */
   styleSelected(
-    patch: Partial<{ color: string; strokeWidth: number; fontSize: number; font: TextFont; opacity: number }>,
+    patch: Partial<{ color: string; strokeWidth: number; fontSize: number; font: TextFont; opacity: number; shape: ShapeSpec; shapeFill: ShapeFill; arrowStart: HeadStyle; arrowEnd: HeadStyle }>,
   ): void {
     const a = this.selected;
     if (!a) return;
     const p: Record<string, unknown> = {};
+    if (a.type === "shape" && patch.shape) p.spec = { ...patch.shape };
+    if (a.type === "shape" && patch.shapeFill) p.fill = patch.shapeFill;
+    if ((a.type === "arrow" || a.type === "line") && patch.arrowStart) p.start = patch.arrowStart;
+    if ((a.type === "arrow" || a.type === "line") && patch.arrowEnd) p.end = patch.arrowEnd;
     if (patch.color && "color" in a && a.color !== patch.color) p.color = patch.color;
     if (patch.strokeWidth !== undefined && "strokeWidth" in a && a.type !== "highlight" && a.strokeWidth !== patch.strokeWidth)
       p.strokeWidth = patch.strokeWidth;
@@ -235,6 +250,7 @@ export class AnnotationOverlay implements Decorator {
       if (!el) continue;
       el.dataset.id = a.id;
       el.classList.add("annot");
+      if (a.type === "note") el.classList.add("note");
       root.appendChild(el);
     }
     const sel = this.state.annotations.find((a) => a.id === this.selectedId && a.pageId === pageId);
@@ -272,11 +288,26 @@ export class AnnotationOverlay implements Decorator {
       case "rect":
       case "ellipse":
       case "cloud":
+      case "shape":
       case "whiteout":
       case "redact": {
         const g = boxGroup(a.box);
         const sw = a.strokeWidth;
-        if (a.type === "cloud") {
+        if (a.type === "shape") {
+          const fill = a.fill ?? "none";
+          g.appendChild(
+            svg("path", {
+              d: shapePath(a.spec ?? DEFAULT_SHAPE, a.box.w, a.box.h),
+              fill: fill === "none" ? "none" : a.color,
+              "fill-opacity": fill === "light" ? 0.25 : a.opacity,
+              stroke: a.color,
+              "stroke-width": sw,
+              "stroke-opacity": a.opacity,
+              "stroke-linejoin": "round",
+            }),
+          );
+          g.appendChild(svg("rect", { x: 0, y: 0, width: a.box.w, height: a.box.h, fill: "transparent" }));
+        } else if (a.type === "cloud") {
           g.appendChild(svg("path", { d: cloudPath(a.box.w, a.box.h), fill: "none", stroke: a.color, "stroke-width": sw, "stroke-opacity": a.opacity, "stroke-linejoin": "round" }));
           // Picking anywhere inside the cloud selects it.
           g.appendChild(svg("rect", { x: 0, y: 0, width: a.box.w, height: a.box.h, fill: "transparent" }));
@@ -330,9 +361,14 @@ export class AnnotationOverlay implements Decorator {
       case "arrow": {
         const g = svg("g", { stroke: a.color, "stroke-width": a.width, "stroke-linecap": "round", fill: "none" });
         g.appendChild(svg("line", { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2 }));
-        if (a.type === "arrow") {
-          const [p1, p2] = arrowHead(a.x1, a.y1, a.x2, a.y2, a.width);
-          g.appendChild(svg("polyline", { points: `${p1[0]},${p1[1]} ${a.x2},${a.y2} ${p2[0]},${p2[1]}` }));
+        const [hs, he] = headsOf(a);
+        for (const part of [headPart(hs, a.x2, a.y2, a.x1, a.y1, a.width), headPart(he, a.x1, a.y1, a.x2, a.y2, a.width)]) {
+          if (!part) continue;
+          if (part.kind === "circle") g.appendChild(svg("circle", { cx: part.cx, cy: part.cy, r: part.r, fill: a.color }));
+          else {
+            const pts = part.points.map((p) => p.join(",")).join(" ");
+            g.appendChild(part.kind === "fill" ? svg("polygon", { points: pts, fill: a.color, "stroke-linejoin": "round" }) : svg("polyline", { points: pts }));
+          }
         }
         // Fat invisible line for easier picking.
         g.appendChild(svg("line", { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, "stroke-width": a.width + 8, stroke: "transparent" }));
@@ -368,13 +404,28 @@ export class AnnotationOverlay implements Decorator {
         return g;
       }
       case "note": {
+        // A speech bubble hanging from the point clicked (the same 20 x 20 box
+        // the saved PDF comment uses); green with a check mark when done.
         const g = svg("g", { transform: `translate(${a.x},${a.y}) scale(1,-1)` });
-        g.appendChild(svg("rect", { x: 0, y: 0, width: 20, height: 18, rx: 2, fill: a.color, stroke: "#5d4300", "stroke-width": 0.8 }));
-        g.appendChild(svg("path", { d: "M4 13 L4 19 L10 13", fill: a.color, stroke: "#5d4300", "stroke-width": 0.8 }));
-        for (const y of [5, 9]) g.appendChild(svg("line", { x1: 4, y1: y, x2: 16, y2: y, stroke: "#5d4300", "stroke-width": 1 }));
-        const title = svg("title");
-        title.textContent = a.text;
-        g.appendChild(title);
+        const fill = a.done ? "#a5d6a7" : a.color;
+        const ink = a.done ? "#1b5e20" : "#6d4c00";
+        g.appendChild(
+          svg("path", {
+            d: "M3 0.5 H17 Q19.5 0.5 19.5 3 V12 Q19.5 14.5 17 14.5 H10 L5 19.5 V14.5 H3 Q0.5 14.5 0.5 12 V3 Q0.5 0.5 3 0.5 Z",
+            fill,
+            stroke: ink,
+            "stroke-width": 1,
+            "stroke-linejoin": "round",
+          }),
+        );
+        if (a.done) g.appendChild(svg("path", { d: "M5.5 7.5 L8.5 10.5 L14.5 4.5", fill: "none", stroke: ink, "stroke-width": 1.8, "stroke-linecap": "round", "stroke-linejoin": "round" }));
+        else for (const y of [5, 9]) g.appendChild(svg("line", { x1: 4.5, y1: y, x2: 15.5, y2: y, stroke: ink, "stroke-width": 1.2, "stroke-linecap": "round" }));
+        if (a.replies?.length) {
+          g.appendChild(svg("circle", { cx: 19, cy: 1.5, r: 4.2, fill: "#1e63d6", stroke: "#fff", "stroke-width": 0.8 }));
+          const n = svg("text", { x: 19, y: 3.2, "font-size": 5.2, "font-weight": 700, fill: "#fff", "text-anchor": "middle", "font-family": "sans-serif" });
+          n.textContent = String(Math.min(9, a.replies.length));
+          g.appendChild(n);
+        }
         return g;
       }
     }
@@ -388,6 +439,17 @@ export class AnnotationOverlay implements Decorator {
     // Never let the browser start its own drag of an annotation (it swallows
     // the pointer until release and makes moving feel stuck).
     layer.addEventListener("dragstart", (e) => e.preventDefault());
+    // Hovering a comment shows it (with replies); double-click edits it.
+    layer.addEventListener("pointerover", (e) => {
+      const g = (e.target as Element).closest<SVGElement>(".annot.note");
+      const a = g && this.state.annotations.find((x) => x.id === g.dataset.id);
+      if (g && a && a.type === "note") showNotePop(a, g.getBoundingClientRect());
+    });
+    layer.addEventListener("pointerout", (e) => {
+      const to = (e.relatedTarget as Element | null)?.closest?.(".annot.note");
+      if (!to) hideNotePop();
+    });
+    layer.addEventListener("pointerdown", () => hideNotePop());
     layer.addEventListener("dblclick", (e) => {
       const id = (e.target as Element).closest<SVGElement>(".annot")?.dataset.id;
       const a = id && this.state.annotations.find((x) => x.id === id);
@@ -483,7 +545,8 @@ export class AnnotationOverlay implements Decorator {
       if (tool === "line" || tool === "arrow") {
         const [x1, y1] = v.toPdf(sx, sy);
         const [x2, y2] = v.toPdf(cx, cy);
-        return { id, pageId, type: tool, x1, y1, x2, y2, color: o.color, width: o.strokeWidth };
+        const heads = tool === "arrow" ? { start: o.arrowStart, end: o.arrowEnd } : {};
+        return { id, pageId, type: tool, x1, y1, x2, y2, color: o.color, width: o.strokeWidth, ...heads };
       }
       if (!SHAPE_TOOLS.includes(tool)) return null;
       let box: Box;
@@ -505,6 +568,7 @@ export class AnnotationOverlay implements Decorator {
         color: isHl ? o.highlightColor : o.color,
         strokeWidth: isHl ? 0 : o.strokeWidth,
         opacity: isHl ? o.highlightOpacity : 1,
+        ...(tool === "shape" ? { spec: { ...o.shape }, fill: o.shapeFill } : {}),
       };
     };
     // A fixed-size highlight shows where it will land as soon as you press.
@@ -938,6 +1002,42 @@ function mergeLineRects(rects: DOMRect[]): DOMRect[] {
  * mouse. Moves are applied once per animation frame: each edit redraws the
  * pages, and doing that for every mouse event is what made dragging stutter.
  */
+let notePop: HTMLElement | null = null;
+
+function when(t?: number): string {
+  if (!t) return "";
+  const d = new Date(t);
+  return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString();
+}
+
+/** The comment's text, author and replies, next to its icon. */
+function showNotePop(a: Extract<Annotation, { type: "note" }>, r: DOMRect): void {
+  notePop ??= Object.assign(document.createElement("div"), { className: "note-pop" });
+  notePop.setAttribute("role", "tooltip");
+  const line = (cls: string, text: string) => Object.assign(document.createElement("div"), { className: cls, textContent: text });
+  const head = [a.author || "", when(a.at), a.done ? "✓ Done" : ""].filter(Boolean).join(" · ");
+  notePop.replaceChildren(
+    ...(head ? [line("note-pop-head", head)] : []),
+    line("note-pop-text", a.text),
+    ...(a.replies ?? []).map((rep) => {
+      const d = line("note-pop-reply", rep.text);
+      d.prepend(line("note-pop-head", [rep.author, when(rep.at)].filter(Boolean).join(" · ")));
+      return d;
+    }),
+    line("note-pop-hint", "Double-click to edit"),
+  );
+  document.body.appendChild(notePop);
+  const w = notePop.offsetWidth,
+    h = notePop.offsetHeight;
+  const left = Math.max(8, Math.min(r.right + 6, window.innerWidth - w - 8));
+  const top = r.top + h + 8 > window.innerHeight ? Math.max(8, r.bottom - h) : r.top;
+  Object.assign(notePop.style, { left: `${left}px`, top: `${top}px` });
+}
+
+function hideNotePop(): void {
+  notePop?.remove();
+}
+
 function distToSegment(px: number, py: number, x0: number, y0: number, x1: number, y1: number): number {
   const dx = x1 - x0, dy = y1 - y0;
   const len2 = dx * dx + dy * dy;

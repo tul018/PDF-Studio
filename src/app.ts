@@ -3,7 +3,7 @@ import { Connector } from "./connector/client";
 import { LiveSession } from "./collaboration/live";
 import { advancedSettings } from "./professional/settings";
 import { checkUpdates, updateSettings } from "./platform/updates";
-import { cropViewport, CSS_UNITS, DocumentStore, renderEngine, type LoadedDoc } from "./core/documents";
+import { cropViewport, CSS_UNITS, detectGpu, DocumentStore, renderEngine, renderSetting, type LoadedDoc } from "./core/documents";
 import { getProfile, type DeviceProfile } from "./core/deviceProfile";
 import { nextZoom } from "./core/layout";
 import { FileSource, fileKeyOf, fileVersionOf, type PdfSource } from "./core/source";
@@ -1076,7 +1076,8 @@ export class App {
       viewMode: viewMode.value as ViewMode,
       night: document.body.classList.contains("night-pages"),
       readRate: this.reader.rate,
-      render: renderEngine(),
+      render: renderSetting(),
+      detected: detectGpu(),
     });
     if (!v) return;
     if (v.reset) {
@@ -1102,8 +1103,9 @@ export class App {
     if (document.body.classList.contains("night-pages") !== v.night) this.action("nightPages");
     this.reader.rate = v.readRate;
     save("pdfstudio:readrate", String(v.readRate));
-    if (v.render !== renderEngine()) {
-      save("pdfstudio:render", v.render);
+    const before = renderEngine();
+    if (v.render !== renderSetting()) save("pdfstudio:render", v.render);
+    if (renderEngine() !== before) {
       // Reopen the document so every canvas (and PDF.js' own) uses the new engine.
       if (this.mainDoc) {
         await this.exclusive(async () => {
@@ -1112,7 +1114,7 @@ export class App {
           await this.switchTabNow(this.activeTab);
         });
       }
-      toast(v.render === "gpu" ? "Drawing pages with the graphics card (GPU)." : "Drawing pages with the processor (CPU).", "ok");
+      toast(renderEngine() === "gpu" ? "Drawing pages with the graphics card (GPU)." : "Drawing pages with the processor (CPU).", "ok");
     }
   }
 
@@ -2262,7 +2264,7 @@ export class App {
         p: "ink",
         r: "rect",
         o: "ellipse",
-        c: "cloud",
+        c: "shape",
         e: "eraser",
         l: "line",
         a: "arrow",

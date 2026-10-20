@@ -11,6 +11,8 @@
  * Coordinates are PDF user space (points, y up) of the *unrotated* page, so
  * annotations stay attached to content when pages are rotated or reordered.
  */
+import type { HeadStyle, ShapeFill, ShapeSpec } from "./shapes";
+
 export type DocId = string;
 
 export interface PageRef {
@@ -50,7 +52,7 @@ interface AnnotBase {
   pageId: string;
 }
 
-export type ShapeKind = "highlight" | "rect" | "ellipse" | "cloud" | "whiteout" | "redact";
+export type ShapeKind = "highlight" | "rect" | "ellipse" | "cloud" | "shape" | "whiteout" | "redact";
 
 export interface ShapeAnnot extends AnnotBase {
   type: ShapeKind;
@@ -58,6 +60,9 @@ export interface ShapeAnnot extends AnnotBase {
   color: string;
   strokeWidth: number;
   opacity: number;
+  /** "shape": which outline (polygon, star, heart, cloud) and its settings. */
+  spec?: ShapeSpec;
+  fill?: ShapeFill;
 }
 
 export interface InkAnnot extends AnnotBase {
@@ -71,6 +76,9 @@ export interface InkAnnot extends AnnotBase {
 
 export interface LineAnnot extends AnnotBase {
   type: "line" | "arrow";
+  /** Arrow heads at each end (absent: an arrow's end is an open head). */
+  start?: HeadStyle;
+  end?: HeadStyle;
   x1: number;
   y1: number;
   x2: number;
