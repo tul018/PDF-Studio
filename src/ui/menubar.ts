@@ -39,6 +39,7 @@ export const MENUS: Menu[] = [
       { label: "Save as…", run: { action: "saveAs" }, keys: "Ctrl+Shift+S", needsDoc: true },
       { label: "Save with password…", run: { action: "protect" }, needsDoc: true },
       { label: "Save smaller copy…", run: { action: "shrink" }, needsDoc: true },
+      { label: "Revert to saved", run: { action: "revert" }, needsDoc: true },
       "-",
       {
         label: "Import",

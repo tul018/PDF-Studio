@@ -41,6 +41,11 @@ export class History {
     this.emit();
   }
 
+  /** Back to the last saved state, as one step that Undo can take back. */
+  revert(): void {
+    this.push(this.savedState);
+  }
+
   /** Apply a change. No-op updates (same reference) are ignored. */
   push(next: EditState): void {
     if (next === this.current) return;

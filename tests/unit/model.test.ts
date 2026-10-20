@@ -51,6 +51,19 @@ describe("History", () => {
     h.markSaved();
     expect(h.dirty).toBe(false);
   });
+
+  it("reverts to the saved state as one undoable step", () => {
+    const h = new History(base());
+    const saved = h.state;
+    h.push(rotatePages(h.state, new Set([h.state.pages[0].id]), 90));
+    const edited = rotatePages(h.state, new Set([h.state.pages[1].id]), 90);
+    h.push(edited);
+    h.revert();
+    expect(h.state).toBe(saved);
+    expect(h.dirty).toBe(false);
+    h.undo();
+    expect(h.state).toBe(edited);
+  });
 });
 
 describe("annotations", () => {

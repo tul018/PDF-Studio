@@ -713,6 +713,21 @@ export class App {
     document.title = "PDF Studio";
   }
 
+  /** File › Revert to saved: drop the unsaved edits (Undo brings them back). */
+  private async revert(): Promise<void> {
+    if (!this.history.dirty) return void toast("No unsaved changes.", "info");
+    const ok = await confirmDialog(
+      "Revert to saved?",
+      "This removes the changes made since the file was last saved. You can still bring them back with Undo.",
+      "Revert",
+      "Cancel",
+    );
+    if (!ok) return;
+    this.history.revert();
+    void clearDraft(this.fileKey);
+    toast("Back to the saved version.", "ok");
+  }
+
   private async offerRecovery(): Promise<void> {
     if (!this.mainDoc) return;
     const draft = await loadDraft(this.fileKey, this.fileVersion, this.mainDoc.id);
@@ -1643,6 +1658,8 @@ export class App {
         return void this.save(true);
       case "print":
         return void this.print();
+      case "revert":
+        return void this.revert();
       case "closeTab":
         return void this.closeTab(this.activeTab);
       case "shortcuts":
