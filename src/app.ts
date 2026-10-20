@@ -325,7 +325,14 @@ export class App {
       <span class="page-total"></span>
       <button class="icon-btn" data-pane-act="next" title="Next page">${icon("next")}</button>
       <button class="icon-btn" data-pane-act="zoomOut" title="Zoom out">${icon("zoomOut")}</button>
-      <input class="pane-zoom" list="zoom-presets" inputmode="decimal" aria-label="Zoom (type a percentage)" title="Zoom: type a percentage, e.g. 135, or pick one" />
+      <select class="pane-zoom" aria-label="Zoom" title="Zoom">
+        <option data-custom value="1">100%</option>
+        <option value="width">Fit width</option>
+        <option value="page">Fit page</option>
+        <option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option>
+        <option value="1.5">150%</option><option value="2">200%</option><option value="3">300%</option><option value="4">400%</option>
+        <option value="other">Other %…</option>
+      </select>
       <button class="icon-btn" data-pane-act="zoomIn" title="Zoom in">${icon("zoomIn")}</button>
       <button class="icon-btn" data-pane-act="fit" title="Fit width">${icon("fitWidth")}</button>
       <button class="btn small pane-other" data-pane-act="other" title="Show another PDF in this pane, to compare side by side">Open other PDF…</button>
@@ -389,18 +396,17 @@ export class App {
     const shown = () => this.paneViewer(pane);
     input.addEventListener("change", () => this.gotoPageInput(input, shown()));
     input.addEventListener("keydown", (e) => e.stopPropagation());
-    const zoomBox = $<HTMLInputElement>(".pane-zoom", head);
-    zoomBox.addEventListener("keydown", (e) => {
-      e.stopPropagation();
-      if (e.key === "Enter") zoomBox.blur();
-    });
-    zoomBox.addEventListener("focus", () => zoomBox.select());
-    zoomBox.addEventListener("change", () => {
-      const v = zoomBox.value.trim().toLowerCase();
-      const pct = parseFloat(v.replace(",", "."));
-      if (/width|กว้าง|宽/.test(v)) shown().setFit("width");
-      else if (/page|หน้า|页/.test(v)) shown().setFit("page");
-      else if (pct > 0) shown().setZoom(pct / 100);
+    const zoomBox = $<HTMLSelectElement>(".pane-zoom", head);
+    zoomBox.addEventListener("keydown", (e) => e.stopPropagation());
+    zoomBox.addEventListener("change", async () => {
+      const v = zoomBox.value;
+      if (v === "width" || v === "page") shown().setFit(v);
+      else if (v === "other") {
+        // Any percentage, typed.
+        const t = await promptText("Zoom", String(Math.round(shown().zoom * 100)), { placeholder: "e.g. 135", okLabel: "Zoom", sub: "Type a percentage." });
+        const pct = parseFloat((t ?? "").replace(",", "."));
+        if (pct > 0) shown().setZoom(pct / 100);
+      } else shown().setZoom(parseFloat(v));
       this.updatePageIndicators();
     });
     head.addEventListener("click", (e) => {
@@ -2323,8 +2329,12 @@ export class App {
       const pi = $<HTMLInputElement>(".page-input", p.head);
       if (document.activeElement !== pi) pi.value = total ? String(pv.currentIndex + 1) : "";
       $(".page-total", p.head).textContent = `/ ${total}`;
-      const pz = $<HTMLInputElement>(".pane-zoom", p.head);
-      if (document.activeElement !== pz) pz.value = `${Math.round(pv.zoom * 100)}%`;
+      // The first entry always shows the pane's current zoom (like the main zoom box).
+      const pz = $<HTMLSelectElement>(".pane-zoom", p.head);
+      const cur = pz.querySelector<HTMLOptionElement>("option[data-custom]")!;
+      cur.textContent = `${Math.round(pv.zoom * 100)}%`;
+      cur.value = String(pv.zoom);
+      pz.value = String(pv.zoom);
       $(".pane-title", p.head).textContent = this.panes.length > 1 ? (i === 0 ? "A" : "B") : "";
     });
   }

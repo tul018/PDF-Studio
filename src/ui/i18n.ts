@@ -13,6 +13,7 @@ type Dict = Record<string, string>;
 type Templates = [string, string][];
 
 const TH: Dict = {
+  "Other %…": "อื่น ๆ %…", "Type a percentage.": "พิมพ์เปอร์เซ็นต์", "e.g. 135": "เช่น 135",
   "Zoom (type a percentage)": "ซูม (พิมพ์เปอร์เซ็นต์)", "Zoom: type a percentage, e.g. 135, or pick one": "ซูม: พิมพ์เปอร์เซ็นต์ เช่น 135 หรือเลือกจากรายการ",
   "Auto-save": "บันทึกอัตโนมัติ", "Auto-saving…": "กำลังบันทึกอัตโนมัติ…", "Auto-save is off.": "ปิดการบันทึกอัตโนมัติแล้ว", "Auto-save is on: changes are saved to the file 30 seconds after your last edit. Each save clears Undo.": "เปิดบันทึกอัตโนมัติแล้ว: บันทึกลงไฟล์ 30 วินาทีหลังแก้ไขล่าสุด แต่ละครั้งจะล้างประวัติเลิกทำ", "Auto-save is on, but only works in the PC app with files opened from this PC.": "เปิดบันทึกอัตโนมัติแล้ว แต่ใช้ได้เฉพาะในแอปบน PC กับไฟล์ที่เปิดจากเครื่องนี้",
   "Form data (CSV / JSON)…": "ข้อมูลฟอร์ม (CSV / JSON)…", "Form data (CSV)…": "ข้อมูลฟอร์ม (CSV)…", "This document has no form fields.": "เอกสารนี้ไม่มีช่องกรอกฟอร์ม", "None of the names in the file match this form's fields.": "ไม่มีชื่อในไฟล์ที่ตรงกับช่องของฟอร์มนี้", "The file needs field names in the first row and values in the second.": "ไฟล์ต้องมีชื่อช่องในแถวแรก และค่าในแถวที่สอง",
@@ -105,6 +106,7 @@ const TH: Dict = {
 };
 
 const ZH: Dict = {
+  "Other %…": "其他 %…", "Type a percentage.": "输入百分比。", "e.g. 135": "例如 135",
   "Zoom (type a percentage)": "缩放（输入百分比）", "Zoom: type a percentage, e.g. 135, or pick one": "缩放：输入百分比（如 135）或从列表选择",
   "Auto-save": "自动保存", "Auto-saving…": "正在自动保存…", "Auto-save is off.": "已关闭自动保存。", "Auto-save is on: changes are saved to the file 30 seconds after your last edit. Each save clears Undo.": "已开启自动保存：最后一次编辑 30 秒后保存到文件。每次保存会清除撤销记录。", "Auto-save is on, but only works in the PC app with files opened from this PC.": "已开启自动保存，但仅在电脑版中对本机打开的文件有效。",
   "Form data (CSV / JSON)…": "表单数据（CSV / JSON）…", "Form data (CSV)…": "表单数据（CSV）…", "This document has no form fields.": "此文档没有表单字段。", "None of the names in the file match this form's fields.": "文件中的名称与此表单的字段都不匹配。", "The file needs field names in the first row and values in the second.": "文件第一行应为字段名，第二行为值。",
