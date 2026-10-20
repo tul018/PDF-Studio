@@ -398,6 +398,12 @@ export class App {
     viewer.placeholderFor = (ref) => this.thumbs?.cached(ref);
 
     root.addEventListener("pointerdown", () => this.activate(pane), { capture: true });
+    // Select tool: a click on empty space (page or around it) clears the selection.
+    scroller.addEventListener("pointerdown", (e) => {
+      if (this.tool !== "select" || e.button !== 0) return;
+      if ((e.target as Element).closest(".annot, .resize-handle, .text-editor, .form-field, .pdf-link")) return;
+      for (const p of this.panes) p.overlay.select(null);
+    });
     root.addEventListener("focusin", () => this.activate(pane));
     const input = $<HTMLInputElement>(".page-input", head);
     // While comparing, the header drives the other PDF shown in this pane.

@@ -56,3 +56,22 @@ test("box: fill and outline changed after drawing; picture replaced in place; co
   await page.mouse.move(note.x + note.width / 2, note.y + note.height / 3 + 1);
   await expect(page.locator(".note-pop")).toContainText("Second");
 });
+
+test("Select: a click on empty space clears the selection", async ({ page }) => {
+  await openPdf(page, "basic.pdf");
+  const b = await pageBox(page, 1);
+  await page.keyboard.press("r");
+  await page.mouse.move(b.x + 100, b.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(b.x + 250, b.y + 380, { steps: 4 });
+  await page.mouse.up();
+  await page.keyboard.press("v");
+  await page.mouse.click(b.x + 101, b.y + 301);
+  await expect(page.locator(".selection-box")).toHaveCount(1);
+  await page.mouse.click(b.x + 400, b.y + 600); // empty part of the page
+  await expect(page.locator(".selection-box")).toHaveCount(0);
+  await page.mouse.click(b.x + 101, b.y + 301);
+  await expect(page.locator(".selection-box")).toHaveCount(1);
+  await page.mouse.click(b.x - 30, b.y + 300); // grey area beside the page
+  await expect(page.locator(".selection-box")).toHaveCount(0);
+});
