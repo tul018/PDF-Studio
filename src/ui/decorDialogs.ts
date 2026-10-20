@@ -13,6 +13,7 @@ import {
 import { buttons, modal, promptText, title, toast } from "./dialogs";
 import { parsePages } from "../save/split";
 import { PAPER, type Layout, type Subset } from "../print/layout";
+import { pageLabel, type PageLabelRule, type PageLabelStyle } from "../edit/model";
 
 /** Dialogs for stamps, page numbers and watermarks. Choices are remembered. */
 
@@ -1156,6 +1157,111 @@ export function printDialog(
       ]);
       refresh();
       requestAnimationFrame(() => pages.select.focus());
+    });
+  });
+}
+
+// ------------------------------------------------------------ page labels
+
+const LABEL_STYLES: [PageLabelStyle, string][] = [
+  ["D", "1, 2, 3"],
+  ["r", "i, ii, iii"],
+  ["R", "I, II, III"],
+  ["a", "a, b, c"],
+  ["A", "A, B, C"],
+  ["", "No number (prefix only)"],
+];
+
+/**
+ * Page labels: from a page on, number pages in a style with a prefix (e.g.
+ * front pages i, ii, iii, then 1, 2, 3 from the first chapter). Saved in the
+ * PDF, so other apps show the same page numbers.
+ */
+export function pageLabelsDialog(total: number, initial: readonly PageLabelRule[], current: number): Promise<PageLabelRule[] | null> {
+  return new Promise((resolve) => {
+    modal((box, close) => {
+      box.classList.add("labels-dialog");
+      title(box, "Page labels", "Number pages your way, e.g. i, ii, iii for the front pages, then 1, 2, 3.");
+      const list = document.createElement("div");
+      list.className = "label-rules";
+      const preview = document.createElement("p");
+      preview.className = "muted small label-preview";
+      box.append(list);
+      const rows: (() => PageLabelRule | null)[] = [];
+      const update = () => {
+        const rules = collect();
+        const shown = Array.from({ length: Math.min(total, 8) }, (_, i) => `${i + 1}→${pageLabel(rules, i) ?? i + 1}`);
+        preview.textContent = rules.length ? `${shown.join("  ")}${total > 8 ? "  …" : ""}` : "Plain page numbers (1, 2, 3…).";
+      };
+      const addRow = (r: PageLabelRule) => {
+        const line = document.createElement("div");
+        line.className = "label-rule";
+        const from = num(r.start + 1, 1, total);
+        const style = select(LABEL_STYLES, r.style);
+        const prefix = document.createElement("input");
+        prefix.className = "modal-input";
+        prefix.placeholder = "Prefix";
+        prefix.value = r.prefix;
+        const first = num(r.first, 1, 99999);
+        const del = document.createElement("button");
+        del.className = "btn small";
+        del.textContent = "×";
+        del.setAttribute("aria-label", "Remove this numbering");
+        const cell = (label: string, el: HTMLElement) => {
+          const l = document.createElement("label");
+          l.className = "small";
+          l.append(label, el);
+          return l;
+        };
+        line.append(cell("From page", from), cell("Style", style), cell("Prefix", prefix), cell("Start at", first), del);
+        list.append(line);
+        let removed = false;
+        const get = (): PageLabelRule | null =>
+          !removed
+            ? { start: Math.min(total, Math.max(1, Math.round(Number(from.value) || 1))) - 1, style: style.value as PageLabelStyle, prefix: prefix.value, first: Math.max(1, Math.round(Number(first.value) || 1)) }
+            : null;
+        rows.push(get);
+        for (const el of [from, style, prefix, first]) el.addEventListener("input", update);
+        style.addEventListener("change", update);
+        prefix.addEventListener("keydown", (e) => e.stopPropagation());
+        del.addEventListener("click", () => {
+          removed = true;
+          line.remove();
+          update();
+        });
+      };
+      const collect = (): PageLabelRule[] => {
+        const byStart = new Map<number, PageLabelRule>();
+        for (const g of rows) {
+          const r = g();
+          if (r) byStart.set(r.start, r);
+        }
+        return [...byStart.values()].sort((a, b) => a.start - b.start);
+      };
+      for (const r of initial) addRow(r);
+      if (!initial.length) {
+        addRow({ start: 0, style: "r", prefix: "", first: 1 });
+        if (current > 0) addRow({ start: current, style: "D", prefix: "", first: 1 });
+      }
+      const add = document.createElement("button");
+      add.className = "btn small";
+      add.textContent = `+ Numbering from page ${current + 1}`;
+      add.addEventListener("click", () => {
+        addRow({ start: current, style: "D", prefix: "", first: 1 });
+        update();
+      });
+      box.append(add, preview);
+      const done = (v: PageLabelRule[] | null) => {
+        close();
+        resolve(v);
+      };
+      escClose(box, () => done(null));
+      buttons(box, [
+        { label: "Plain numbers", onClick: () => done([]) },
+        { label: "Cancel", onClick: () => done(null) },
+        { label: "Apply", primary: true, onClick: () => done(collect()) },
+      ]);
+      update();
     });
   });
 }

@@ -34,6 +34,8 @@ export class Thumbnails {
   private lastClicked = -1;
   private currentId = "";
   onNavigate: (index: number) => void = () => {};
+  /** Page label (iii, A-1...) or null for the plain number. */
+  labelOf: (index: number) => string | null = () => null;
   onSelectionChange: (ids: Set<string>) => void = () => {};
   onMove: (ids: Set<string>, toIndex: number) => void = () => {};
   /** The page as already drawn in the main view, if it is (see render). */
@@ -217,11 +219,16 @@ export class Thumbnails {
     return it;
   }
 
+  /** Page labels changed: rewrite the shown numbers. */
+  refreshLabels(): void {
+    for (const it of this.items.values()) (it.el.lastChild as HTMLElement).textContent = this.labelOf(it.index) ?? String(it.index + 1);
+  }
+
   private position(it: Item): void {
     const s = this.layout.size(it.index);
     it.el.style.top = `${this.layout.top(it.index)}px`;
     it.frame.style.height = `${s.height - LABEL_H}px`;
-    (it.el.lastChild as HTMLElement).textContent = String(it.index + 1);
+    (it.el.lastChild as HTMLElement).textContent = this.labelOf(it.index) ?? String(it.index + 1);
   }
 
   private unmount(it: Item): void {

@@ -80,3 +80,17 @@ describe("annotations", () => {
     expect(out.slice(0, 2)).toEqual([0, 0]);
   });
 });
+
+describe("page labels", () => {
+  it("numbers front pages in roman, then from 1, with prefixes and letters", async () => {
+    const { pageLabel } = await import("../../src/edit/model");
+    const rules = [
+      { start: 0, style: "r" as const, prefix: "", first: 1 },
+      { start: 3, style: "D" as const, prefix: "", first: 1 },
+      { start: 6, style: "A" as const, prefix: "App-", first: 1 },
+    ];
+    expect([0, 1, 2, 3, 4, 6, 7].map((i) => pageLabel(rules, i))).toEqual(["i", "ii", "iii", "1", "2", "App-A", "App-B"]);
+    expect(pageLabel(undefined, 4)).toBeNull();
+    expect(pageLabel([{ start: 0, style: "R", prefix: "", first: 14 }], 0)).toBe("XIV");
+  });
+});

@@ -154,6 +154,38 @@ export interface EditState {
   annotations: readonly Annotation[];
   /** key = `${docId}|${fieldName}` */
   formValues: Readonly<Record<string, FormValue>>;
+  /** Page numbering shown and saved (/PageLabels), e.g. i, ii for the front pages, then 1, 2... */
+  pageLabels?: readonly PageLabelRule[];
+}
+
+/** "D" 1 2 3, "r" i ii, "R" I II, "a" a b, "A" A B, "" prefix only. */
+export type PageLabelStyle = "D" | "r" | "R" | "a" | "A" | "";
+
+/** From page `start` (0-based) on: `prefix` + the number in `style`, counting from `first`. */
+export interface PageLabelRule {
+  start: number;
+  style: PageLabelStyle;
+  prefix: string;
+  first: number;
+}
+
+function roman(n: number): string {
+  const v: [number, string][] = [[1000, "m"], [900, "cm"], [500, "d"], [400, "cd"], [100, "c"], [90, "xc"], [50, "l"], [40, "xl"], [10, "x"], [9, "ix"], [5, "v"], [4, "iv"], [1, "i"]];
+  let out = "";
+  for (const [k, s] of v) while (n >= k) (out += s), (n -= k);
+  return out;
+}
+
+/** The label of page `index` (0-based), or null with no rules (plain 1, 2, 3). */
+export function pageLabel(rules: readonly PageLabelRule[] | undefined, index: number): string | null {
+  if (!rules?.length) return null;
+  let rule: PageLabelRule | undefined;
+  for (const r of rules) if (r.start <= index && (!rule || r.start >= rule.start)) rule = r;
+  if (!rule) return String(index + 1);
+  const n = rule.first + index - rule.start;
+  const letters = (k: number) => String.fromCharCode(97 + ((k - 1) % 26)).repeat(Math.floor((k - 1) / 26) + 1);
+  const num = { D: String(n), r: roman(n), R: roman(n).toUpperCase(), a: letters(n), A: letters(n).toUpperCase(), "": "" }[rule.style];
+  return rule.prefix + num;
 }
 
 export interface StoredImage {

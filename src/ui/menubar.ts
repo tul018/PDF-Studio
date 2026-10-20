@@ -98,6 +98,7 @@ export const MENUS: Menu[] = [
           { label: "Rotate right", run: { pageOp: "rotR" }, needsDoc: true },
           { label: "Move to page…", run: { pageOp: "moveTo" }, needsDoc: true },
           { label: "Cut pages…", run: { pageOp: "cut" }, needsDoc: true },
+          { label: "Page labels…", run: { pageOp: "labels" }, needsDoc: true },
           { label: "Crop pages", run: { action: "cropTool" }, needsDoc: true },
           { label: "Remove crop", run: { pageOp: "uncrop" }, needsDoc: true },
           "-",

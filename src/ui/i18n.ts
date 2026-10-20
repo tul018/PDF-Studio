@@ -13,6 +13,7 @@ type Dict = Record<string, string>;
 type Templates = [string, string][];
 
 const TH: Dict = {
+  "Page labels…": "เลขหน้าแบบกำหนดเอง…", "Page labels": "เลขหน้าแบบกำหนดเอง", "Number pages your way, e.g. i, ii, iii for the front pages, then 1, 2, 3.": "กำหนดเลขหน้าเอง เช่น i, ii, iii สำหรับหน้าแรก ๆ แล้วต่อด้วย 1, 2, 3", "From page": "ตั้งแต่หน้า", "Style": "รูปแบบ", "Prefix": "คำนำหน้า", "Start at": "เริ่มที่", "No number (prefix only)": "ไม่มีตัวเลข (คำนำหน้าอย่างเดียว)", "Remove this numbering": "ลบการกำหนดเลขนี้", "Plain numbers": "เลขหน้าปกติ", "Plain page numbers (1, 2, 3…).": "เลขหน้าปกติ (1, 2, 3…)", "Apply": "ใช้",
   "Crop pages": "ครอบตัดหน้า", "Remove crop": "เอาการครอบตัดออก", "Copy pages": "คัดลอกหน้า", "Cut pages to paste": "ตัดหน้าไปวาง", "Paste pages": "วางหน้า", "This page": "หน้านี้", "Keep only the part inside the frame. Undo or Edit › Pages › Remove crop brings the rest back.": "เก็บเฉพาะส่วนในกรอบ เลิกทำ หรือ แก้ไข › หน้า › เอาการครอบตัดออก เพื่อนำส่วนที่เหลือกลับมา", "Drag a frame around the part of the page to keep.": "ลากกรอบรอบส่วนของหน้าที่ต้องการเก็บไว้", "Copy or cut pages first (select them in the sidebar, Ctrl+C).": "คัดลอกหรือตัดหน้าก่อน (เลือกในแถบข้าง แล้วกด Ctrl+C)",
   "Print": "พิมพ์", "All of them": "ทุกหน้าที่เลือก", "Odd pages only": "เฉพาะหน้าคี่", "Even pages only": "เฉพาะหน้าคู่", "1 page per sheet": "1 หน้าต่อแผ่น", "2 pages per sheet": "2 หน้าต่อแผ่น", "4 pages per sheet": "4 หน้าต่อแผ่น", "6 pages per sheet": "6 หน้าต่อแผ่น", "Booklet (fold in half)": "หนังสือเล่มเล็ก (พับครึ่ง)", "Paper": "กระดาษ", "Same as the pages": "เท่ากับขนาดหน้า", "Orientation": "แนวกระดาษ", "Automatic": "อัตโนมัติ", "Portrait": "แนวตั้ง", "Landscape": "แนวนอน", "Reverse order": "เรียงย้อนกลับ", "Black and white (grayscale)": "ขาวดำ (โทนเทา)", "Print on both sides, flipping on the short edge, then fold the stack in half.": "พิมพ์สองหน้าแบบพลิกด้านสั้น แล้วพับครึ่งทั้งปึก", "Several pages per sheet are printed on A4 unless you choose a paper size.": "หลายหน้าต่อแผ่นจะพิมพ์บน A4 ถ้าไม่ได้เลือกขนาดกระดาษ", "Previous sheet": "แผ่นก่อน", "Next sheet": "แผ่นถัดไป", "Nothing to print": "ไม่มีอะไรให้พิมพ์", "Rendering pages for printing…": "กำลังเตรียมหน้าสำหรับพิมพ์…", "Preparing to print…": "กำลังเตรียมพิมพ์…",
   "Comments": "ความเห็น", "Your name": "ชื่อของคุณ", "Shown on your comments": "แสดงบนความเห็นของคุณ", "All": "ทั้งหมด", "Done": "เสร็จแล้ว", "Reopen": "เปิดอีกครั้ง", "Reply": "ตอบกลับ", "Reply…": "ตอบกลับ…", "Show": "แสดง", "No comments. Use the Comment tool (N) and click on the page.": "ยังไม่มีความเห็น ใช้เครื่องมือความเห็น (N) แล้วคลิกบนหน้า", "Cloud": "เมฆ", "Cloud (C)": "รูปเมฆ (C)", "Eraser": "ยางลบ", "Eraser: drag over pen strokes (E)": "ยางลบ: ลากผ่านเส้นที่วาด (E)",
@@ -100,6 +101,7 @@ const TH: Dict = {
 };
 
 const ZH: Dict = {
+  "Page labels…": "页码标签…", "Page labels": "页码标签", "Number pages your way, e.g. i, ii, iii for the front pages, then 1, 2, 3.": "自定义页码，例如前几页用 i、ii、iii，之后用 1、2、3。", "From page": "从第几页", "Style": "样式", "Prefix": "前缀", "Start at": "起始于", "No number (prefix only)": "无数字（仅前缀）", "Remove this numbering": "删除此编号", "Plain numbers": "普通页码", "Plain page numbers (1, 2, 3…).": "普通页码（1、2、3…）。", "Apply": "应用",
   "Crop pages": "裁剪页面", "Remove crop": "取消裁剪", "Copy pages": "复制页面", "Cut pages to paste": "剪切页面", "Paste pages": "粘贴页面", "This page": "此页", "Keep only the part inside the frame. Undo or Edit › Pages › Remove crop brings the rest back.": "只保留框内部分。撤销或“编辑 › 页面 › 取消裁剪”可恢复其余部分。", "Drag a frame around the part of the page to keep.": "拖出一个框，框住要保留的部分。", "Copy or cut pages first (select them in the sidebar, Ctrl+C).": "请先复制或剪切页面（在侧边栏选择后按 Ctrl+C）。",
   "Print": "打印", "All of them": "全部", "Odd pages only": "仅奇数页", "Even pages only": "仅偶数页", "1 page per sheet": "每张 1 页", "2 pages per sheet": "每张 2 页", "4 pages per sheet": "每张 4 页", "6 pages per sheet": "每张 6 页", "Booklet (fold in half)": "小册子（对折）", "Paper": "纸张", "Same as the pages": "与页面相同", "Orientation": "方向", "Automatic": "自动", "Portrait": "纵向", "Landscape": "横向", "Reverse order": "倒序", "Black and white (grayscale)": "黑白（灰度）", "Print on both sides, flipping on the short edge, then fold the stack in half.": "双面打印（短边翻转），然后整叠对折。", "Several pages per sheet are printed on A4 unless you choose a paper size.": "每张多页时默认使用 A4，除非选择纸张大小。", "Previous sheet": "上一张", "Next sheet": "下一张", "Nothing to print": "没有可打印的内容", "Rendering pages for printing…": "正在准备打印页面…", "Preparing to print…": "正在准备打印…",
   "Comments": "批注", "Your name": "你的名字", "Shown on your comments": "显示在你的批注上", "All": "全部", "Done": "已完成", "Reopen": "重新打开", "Reply": "回复", "Reply…": "回复…", "Show": "显示", "No comments. Use the Comment tool (N) and click on the page.": "暂无批注。使用批注工具 (N) 并点击页面。", "Cloud": "云形", "Cloud (C)": "云形 (C)", "Eraser": "橡皮擦", "Eraser: drag over pen strokes (E)": "橡皮擦：拖过笔画 (E)",
@@ -180,6 +182,8 @@ const TEMPLATES: Record<Exclude<Lang, "en">, Templates> = {
     ["Copied {n} page{s}. Paste with Ctrl+V after the page you choose.", "คัดลอก {n} หน้าแล้ว วางด้วย Ctrl+V หลังหน้าที่เลือก"],
     ["Cut {n} page{s}. Paste with Ctrl+V after the page you choose.", "ตัด {n} หน้าแล้ว วางด้วย Ctrl+V หลังหน้าที่เลือก"],
     ["Pasted {n} page{s}.", "วาง {n} หน้าแล้ว"],
+    ["+ Numbering from page {n}", "+ กำหนดเลขตั้งแต่หน้า {n}"],
+    ["Page {s} ({n} of {n})", "หน้า {s} ({n} จาก {n})"],
     ["Selected pages ({n})", "หน้าที่เลือก ({n})"],
     ["All pages ({n})", "ทุกหน้า ({n})"],
     ["{n} of {n}", "{n} จาก {n}"],
@@ -197,6 +201,8 @@ const TEMPLATES: Record<Exclude<Lang, "en">, Templates> = {
     ["Copied {n} page{s}. Paste with Ctrl+V after the page you choose.", "已复制 {n} 页。在选定页面后按 Ctrl+V 粘贴。"],
     ["Cut {n} page{s}. Paste with Ctrl+V after the page you choose.", "已剪切 {n} 页。在选定页面后按 Ctrl+V 粘贴。"],
     ["Pasted {n} page{s}.", "已粘贴 {n} 页。"],
+    ["+ Numbering from page {n}", "+ 从第 {n} 页开始编号"],
+    ["Page {s} ({n} of {n})", "第 {s} 页（{n}/{n}）"],
     ["Selected pages ({n})", "所选页面 ({n})"],
     ["All pages ({n})", "全部页面 ({n})"],
     ["{n} of {n}", "{n}/{n}"],

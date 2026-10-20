@@ -570,3 +570,10 @@ textarea.modal-input { height: 110px; padding: 8px; resize: vertical; }
   .print-frame { width: 100%; }
 }
 .crop-frame { position: absolute; z-index: 6; border: 2px dashed #1e88e5; background: rgba(30, 136, 229, 0.08); pointer-events: none; box-sizing: border-box; }
+.labels-dialog { width: min(640px, 96vw); }
+.label-rules { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.label-rule { display: grid; grid-template-columns: 80px 1fr 1fr 80px auto; gap: 6px; align-items: end; }
+.label-rule label { display: flex; flex-direction: column; gap: 3px; }
+.label-rule .num-input, .label-rule select, .label-rule .modal-input { width: 100%; box-sizing: border-box; margin: 0; }
+.label-preview { margin-top: 10px; word-spacing: 2px; }
+@media (max-width: 560px) { .label-rule { grid-template-columns: 1fr 1fr; } }

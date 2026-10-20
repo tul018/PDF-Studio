@@ -19,6 +19,7 @@ import {
   TEXT_FONTS,
   uid,
   type Annotation,
+  pageLabel,
   type EditState,
   type PageRef,
   type StoredImage,
@@ -44,7 +45,7 @@ import { CommentsPanel, savedAuthor } from "./viewer/commentsPanel";
 import { ToolOptionsUI } from "./ui/toolOptions";
 import { ocrPdf } from "./save/ocr";
 import { aboutDialog, shortcutsDialog } from "./ui/decorDialogs";
-import { cutDialog, ocrDialog, protectDialog, photosDialog, settingsDialog, shrinkDialog, exportImagesDialog, pageNumbersDialog, printDialog, type PrintChoice, extractDialog, mergeDialog, stampDialog, type ExtractMode, type PageChoice, watermarkDialog } from "./ui/decorDialogs";
+import { cutDialog, ocrDialog, protectDialog, photosDialog, settingsDialog, shrinkDialog, exportImagesDialog, pageNumbersDialog, pageLabelsDialog, printDialog, type PrintChoice, extractDialog, mergeDialog, stampDialog, type ExtractMode, type PageChoice, watermarkDialog } from "./ui/decorDialogs";
 import { cutPages } from "./edit/cut";
 import { CompareView } from "./compare/compareView";
 import { forgetRecent, mapDocIds, newTab, recentFiles, rememberRecent, TabBar, type Tab, type TabSnapshot } from "./tabs";
@@ -125,6 +126,7 @@ export class App {
   private folderPanel!: FolderPanel;
   private comments!: CommentsPanel;
   /** Pages copied or cut with Ctrl+C / Ctrl+X, with their annotations. */
+  private lastLabels: EditState["pageLabels"];
   private pageClip: { pages: PageRef[]; annotations: Annotation[] } | null = null;
   /** Next open goes to a given place (folder search result): skip restoring the last position. */
   private skipRestoreView = false;
@@ -163,6 +165,7 @@ export class App {
       this.profile.isIOS ? 4 * 1024 * 1024 : 10 * 1024 * 1024,
     );
     this.thumbs.onNavigate = (i) => this.activeViewer.scrollToPage(i);
+    this.thumbs.labelOf = (i) => pageLabel(this.history.state.pageLabels, i);
     this.thumbs.onMove = (ids, to) => this.history.push(movePages(this.history.state, ids, to));
     this.thumbs.onSelectionChange = () => this.updatePageOpsState();
     // Thumbnails are copied from pages the main view has drawn, not rendered twice.
@@ -790,6 +793,10 @@ export class App {
     }
     this.updateChrome();
     if (this.comments && !$('[data-panel="comments"]').hidden) this.comments.render();
+    if (s.pageLabels !== this.lastLabels) {
+      this.lastLabels = s.pageLabels;
+      this.thumbs.refreshLabels();
+    }
     if (this.history.dirty && this.mainDoc) {
       clearTimeout(this.draftTimer);
       this.draftTimer = window.setTimeout(() => this.writeDraftNow(), 3000);
@@ -1277,6 +1284,14 @@ export class App {
     this.setTool("select");
   }
 
+  /** Edit › Pages › Page labels: numbering such as i, ii for the front pages, then 1, 2... */
+  private async editPageLabels(): Promise<void> {
+    const s = this.history.state;
+    const rules = await pageLabelsDialog(s.pages.length, s.pageLabels ?? [], this.activeViewer.currentIndex);
+    if (!rules) return;
+    this.history.push({ ...s, pageLabels: rules.length ? rules : undefined });
+  }
+
   /** Ctrl+C / Ctrl+X on pages: keep them (and their annotations) to paste. */
   private copyPages(cut: boolean): void {
     const s = this.history.state;
@@ -1321,6 +1336,8 @@ export class App {
         return this.copyPages(op === "cutClip");
       case "paste":
         return this.pastePages();
+      case "labels":
+        return void this.editPageLabels();
       case "uncrop":
         this.history.push({ ...s, pages: s.pages.map((p) => (ids.has(p.id) && p.crop ? (({ crop: _c, ...rest }) => rest)(p) : p)) });
         break;
@@ -2024,7 +2041,8 @@ export class App {
     custom.textContent = pct;
     custom.value = String(v.zoom);
     zs.value = String(v.zoom);
-    $("#status-page").textContent = n ? `Page ${v.currentIndex + 1} of ${n}` : "";
+    const lab = pageLabel(this.history.state.pageLabels, v.currentIndex);
+    $("#status-page").textContent = n ? (lab ? `Page ${lab} (${v.currentIndex + 1} of ${n})` : `Page ${v.currentIndex + 1} of ${n}`) : "";
     $("#status-zoom").textContent = n ? pct : "";
     this.thumbs.setCurrent(v.currentIndex);
     this.panes.forEach((p, i) => {

@@ -24,7 +24,7 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { cloudPath, rotVec, textLines, type Annotation, type Box, type FormValue, type TextFont } from "../edit/model";
+import { cloudPath, rotVec, textLines, type PageLabelRule, type Annotation, type Box, type FormValue, type TextFont } from "../edit/model";
 import { saveEncrypted, type Protection } from "./encrypt";
 import { copyDocumentStructure, detachPageLinks, pruneUnreachable, relinkPage, type PageTarget } from "./structure";
 
@@ -62,6 +62,8 @@ export interface SavePlan {
   fontFiles?: Record<string, Uint8Array>;
   /** Save with a password (AES-256). */
   protect?: Protection;
+  /** Page numbering to write as /PageLabels (replaces the file's own). */
+  pageLabels?: PageLabelRule[];
 }
 
 export type Progress = (done: number, total: number) => void;
@@ -173,6 +175,17 @@ export async function applyEdits(plan: SavePlan, onProgress: Progress = () => {}
     if (i % 25 === 0) onProgress(i, total);
   }
   onProgress(total, total);
+  if (plan.pageLabels?.length) {
+    const nums: unknown[] = [];
+    for (const r of [...plan.pageLabels].sort((a, b) => a.start - b.start)) {
+      const d: Record<string, unknown> = { St: Math.max(1, r.first) };
+      if (r.style) d.S = PDFName.of(r.style);
+      if (r.prefix) d.P = PDFHexString.fromText(r.prefix);
+      nums.push(r.start, out.context.obj(d as Record<string, any>));
+    }
+    if (!plan.pageLabels.some((r) => r.start === 0)) nums.unshift(0, out.context.obj({ S: PDFName.of("D") }));
+    out.catalog.set(PDFName.of("PageLabels"), out.context.obj({ Nums: nums as any[] }));
+  }
   if (!identity) pruneUnreachable(out);
 
   if (plan.protect) {
