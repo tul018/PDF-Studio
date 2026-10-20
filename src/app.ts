@@ -308,6 +308,11 @@ export class App {
 
   // ================================================================ panes
 
+  /** What a pane shows: its own pages, or the other PDF while comparing. */
+  private paneViewer(p: Pane): Viewer {
+    return p.compare?.shown ?? p.viewer;
+  }
+
   private createPane(): Pane {
     const root = document.createElement("div");
     root.className = "pane";
@@ -320,7 +325,7 @@ export class App {
       <span class="page-total"></span>
       <button class="icon-btn" data-pane-act="next" title="Next page">${icon("next")}</button>
       <button class="icon-btn" data-pane-act="zoomOut" title="Zoom out">${icon("zoomOut")}</button>
-      <span class="pane-zoom"></span>
+      <input class="pane-zoom" list="zoom-presets" inputmode="decimal" aria-label="Zoom (type a percentage)" title="Zoom: type a percentage, e.g. 135, or pick one" />
       <button class="icon-btn" data-pane-act="zoomIn" title="Zoom in">${icon("zoomIn")}</button>
       <button class="icon-btn" data-pane-act="fit" title="Fit width">${icon("fitWidth")}</button>
       <button class="btn small pane-other" data-pane-act="other" title="Show another PDF in this pane, to compare side by side">Open other PDF…</button>
@@ -380,11 +385,28 @@ export class App {
     root.addEventListener("pointerdown", () => this.activate(pane), { capture: true });
     root.addEventListener("focusin", () => this.activate(pane));
     const input = $<HTMLInputElement>(".page-input", head);
-    input.addEventListener("change", () => this.gotoPageInput(input, viewer));
+    // While comparing, the header drives the other PDF shown in this pane.
+    const shown = () => this.paneViewer(pane);
+    input.addEventListener("change", () => this.gotoPageInput(input, shown()));
     input.addEventListener("keydown", (e) => e.stopPropagation());
+    const zoomBox = $<HTMLInputElement>(".pane-zoom", head);
+    zoomBox.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") zoomBox.blur();
+    });
+    zoomBox.addEventListener("focus", () => zoomBox.select());
+    zoomBox.addEventListener("change", () => {
+      const v = zoomBox.value.trim().toLowerCase();
+      const pct = parseFloat(v.replace(",", "."));
+      if (/width|กว้าง|宽/.test(v)) shown().setFit("width");
+      else if (/page|หน้า|页/.test(v)) shown().setFit("page");
+      else if (pct > 0) shown().setZoom(pct / 100);
+      this.updatePageIndicators();
+    });
     head.addEventListener("click", (e) => {
       const act = (e.target as Element).closest<HTMLElement>("[data-pane-act]")?.dataset.paneAct;
       if (!act) return;
+      const viewer = shown();
       if (act === "prev") viewer.prev();
       if (act === "next") viewer.next();
       if (act === "zoomIn") viewer.setZoom(nextZoom(viewer.zoom, 1));
@@ -734,6 +756,7 @@ export class App {
       pane.head,
       pane.scroller,
     );
+    pane.compare.onChange = () => this.updatePageIndicators();
     try {
       await pane.compare.open(source);
     } catch (e) {
@@ -1991,8 +2014,9 @@ export class App {
     pageInput.addEventListener("keydown", (e) => e.stopPropagation());
     $<HTMLSelectElement>("#zoom-select").addEventListener("change", (e) => {
       const v = (e.target as HTMLSelectElement).value;
-      if (v === "width" || v === "page") this.activeViewer.setFit(v);
-      else this.activeViewer.setZoom(parseFloat(v));
+      const shown = this.paneViewer(this.activePane);
+      if (v === "width" || v === "page") shown.setFit(v);
+      else shown.setZoom(parseFloat(v));
     });
     this.toolOpts = new ToolOptionsUI(
       () => this.panes.map((p) => p.overlay),
@@ -2294,10 +2318,13 @@ export class App {
     $("#status-zoom").textContent = n ? pct : "";
     this.thumbs.setCurrent(v.currentIndex);
     this.panes.forEach((p, i) => {
+      const pv = this.paneViewer(p);
+      const total = pv === p.viewer ? n : pv.pageList.length;
       const pi = $<HTMLInputElement>(".page-input", p.head);
-      if (document.activeElement !== pi) pi.value = n ? String(p.viewer.currentIndex + 1) : "";
-      $(".page-total", p.head).textContent = `/ ${n}`;
-      $(".pane-zoom", p.head).textContent = `${Math.round(p.viewer.zoom * 100)}%`;
+      if (document.activeElement !== pi) pi.value = total ? String(pv.currentIndex + 1) : "";
+      $(".page-total", p.head).textContent = `/ ${total}`;
+      const pz = $<HTMLInputElement>(".pane-zoom", p.head);
+      if (document.activeElement !== pz) pz.value = `${Math.round(pv.zoom * 100)}%`;
       $(".pane-title", p.head).textContent = this.panes.length > 1 ? (i === 0 ? "A" : "B") : "";
     });
   }

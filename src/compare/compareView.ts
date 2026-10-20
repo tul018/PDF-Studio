@@ -74,6 +74,14 @@ export class CompareView {
     private ownScroller: HTMLElement,
   ) {}
 
+  /** Called when the other PDF's page or zoom changes (pane header). */
+  onChange: () => void = () => {};
+
+  /** The other PDF's viewer while comparing. */
+  get shown(): Viewer | null {
+    return this.viewer;
+  }
+
   get active(): boolean {
     return !!this.viewer;
   }
@@ -92,6 +100,8 @@ export class CompareView {
     viewer.budgetShare = 0.5;
     viewer.addDecorator(this.right);
     viewer.setPages(this.pages, false);
+    viewer.onZoomChange = () => this.onChange();
+    viewer.onPageChange = () => this.onChange();
     this.viewer = viewer;
     this.host.leftViewer().addDecorator(this.left);
     requestAnimationFrame(() => viewer.setFit("width"));
@@ -119,6 +129,7 @@ export class CompareView {
     this.changed = [];
     void this.store.closeAll();
     this.root.classList.remove("comparing");
+    this.onChange();
   }
 
   private buildBar(name: string): void {

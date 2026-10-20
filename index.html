@@ -29,6 +29,11 @@
         </select>
         <span class="zoom-group">
         <button class="icon-btn hide-sm" data-action="zoomOut" data-icon="zoomOut" title="Zoom out (Ctrl+-)" data-needs-doc></button>
+        <datalist id="zoom-presets">
+          <option value="Fit width"></option><option value="Fit page"></option>
+          <option value="50%"></option><option value="75%"></option><option value="100%"></option><option value="125%"></option>
+          <option value="150%"></option><option value="200%"></option><option value="300%"></option><option value="400%"></option>
+        </datalist>
         <select id="zoom-select" aria-label="Zoom" data-needs-doc>
           <option data-custom value="1">100%</option>
           <option value="width">Fit width</option>
