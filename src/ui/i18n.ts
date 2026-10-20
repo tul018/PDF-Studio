@@ -13,6 +13,7 @@ type Dict = Record<string, string>;
 type Templates = [string, string][];
 
 const TH: Dict = {
+  "Comments": "ความเห็น", "Your name": "ชื่อของคุณ", "Shown on your comments": "แสดงบนความเห็นของคุณ", "All": "ทั้งหมด", "Done": "เสร็จแล้ว", "Reopen": "เปิดอีกครั้ง", "Reply": "ตอบกลับ", "Reply…": "ตอบกลับ…", "Show": "แสดง", "No comments. Use the Comment tool (N) and click on the page.": "ยังไม่มีความเห็น ใช้เครื่องมือความเห็น (N) แล้วคลิกบนหน้า", "Cloud": "เมฆ", "Cloud (C)": "รูปเมฆ (C)", "Eraser": "ยางลบ", "Eraser: drag over pen strokes (E)": "ยางลบ: ลากผ่านเส้นที่วาด (E)",
   "Find a command…": "ค้นหาคำสั่ง…", "Find a command": "ค้นหาคำสั่ง", "Type a command…": "พิมพ์ชื่อคำสั่ง…", "Type a command": "พิมพ์ชื่อคำสั่ง", "No matching command": "ไม่พบคำสั่ง", "Commands": "คำสั่ง",
   "Revert to saved": "กลับไปฉบับที่บันทึก", "Revert to saved?": "กลับไปฉบับที่บันทึกไว้?", "This removes the changes made since the file was last saved. You can still bring them back with Undo.": "การแก้ไขหลังการบันทึกครั้งล่าสุดจะถูกเอาออก ยังกู้คืนได้ด้วยเลิกทำ", "Revert": "ย้อนกลับ", "No unsaved changes.": "ไม่มีการแก้ไขที่ยังไม่บันทึก", "Back to the saved version.": "กลับไปฉบับที่บันทึกแล้ว",
   // menu bar
@@ -97,6 +98,7 @@ const TH: Dict = {
 };
 
 const ZH: Dict = {
+  "Comments": "批注", "Your name": "你的名字", "Shown on your comments": "显示在你的批注上", "All": "全部", "Done": "已完成", "Reopen": "重新打开", "Reply": "回复", "Reply…": "回复…", "Show": "显示", "No comments. Use the Comment tool (N) and click on the page.": "暂无批注。使用批注工具 (N) 并点击页面。", "Cloud": "云形", "Cloud (C)": "云形 (C)", "Eraser": "橡皮擦", "Eraser: drag over pen strokes (E)": "橡皮擦：拖过笔画 (E)",
   "Find a command…": "查找命令…", "Find a command": "查找命令", "Type a command…": "输入命令…", "Type a command": "输入命令", "No matching command": "没有匹配的命令", "Commands": "命令",
   "Revert to saved": "恢复到已保存版本", "Revert to saved?": "恢复到已保存版本？", "This removes the changes made since the file was last saved. You can still bring them back with Undo.": "这会移除上次保存后的更改。仍可用撤销恢复。", "Revert": "恢复", "No unsaved changes.": "没有未保存的更改。", "Back to the saved version.": "已恢复到保存的版本。",
   // menu bar

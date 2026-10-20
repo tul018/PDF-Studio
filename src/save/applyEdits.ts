@@ -24,7 +24,7 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { rotVec, textLines, type Annotation, type Box, type FormValue, type TextFont } from "../edit/model";
+import { cloudPath, rotVec, textLines, type Annotation, type Box, type FormValue, type TextFont } from "../edit/model";
 import { saveEncrypted, type Protection } from "./encrypt";
 import { copyDocumentStructure, detachPageLinks, pruneUnreachable, relinkPage, type PageTarget } from "./structure";
 
@@ -378,6 +378,18 @@ async function drawAnnotation(
       });
       return;
     }
+    case "cloud": {
+      const { x, y } = corner(a.box, 0, 0);
+      page.drawSvgPath(cloudPath(a.box.w, a.box.h, true), {
+        x,
+        y,
+        rotate: degrees(a.box.rot),
+        borderColor: hexToRgb(a.color),
+        borderWidth: a.strokeWidth,
+        borderOpacity: a.opacity,
+      });
+      return;
+    }
     case "ink": {
       if (a.points.length < 2) return;
       // drawSvgPath flips y, so feed it -y.
@@ -449,9 +461,33 @@ async function drawAnnotation(
         C: [c.red, c.green, c.blue],
         F: 4,
         Open: false,
-        M: PDFHexString.fromText(pdfDate(new Date())),
+        M: PDFHexString.fromText(pdfDate(new Date(a.at ?? Date.now()))),
+        ...(a.author ? { T: PDFHexString.fromText(a.author) } : {}),
       });
-      page.node.addAnnot(ctx.register(annot));
+      const parent = ctx.register(annot);
+      page.node.addAnnot(parent);
+      // Replies and the done mark are reply notes pointing at the comment
+      // (/IRT), which is how Acrobat, Edge and Preview show a thread.
+      const reply = (fields: Record<string, unknown>) =>
+        page.node.addAnnot(
+          ctx.register(
+            ctx.obj({
+              Type: "Annot",
+              Subtype: "Text",
+              Rect: [a.x, a.y - 20, a.x + 20, a.y],
+              IRT: parent,
+              RT: "R",
+              F: 4,
+              Open: false,
+              C: [c.red, c.green, c.blue],
+              ...fields,
+            } as Record<string, any>),
+          ),
+        );
+      for (const r of a.replies ?? [])
+        reply({ Contents: PDFHexString.fromText(r.text), T: PDFHexString.fromText(r.author), M: PDFHexString.fromText(pdfDate(new Date(r.at))) });
+      if (a.done)
+        reply({ Contents: PDFHexString.fromText("Completed"), StateModel: "Review", State: "Completed", ...(a.author ? { T: PDFHexString.fromText(a.author) } : {}) });
       return;
     }
   }

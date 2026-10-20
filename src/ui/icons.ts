@@ -21,6 +21,8 @@ const P: Record<string, string> = {
   ink: "M3 17c3-6 5-8 7-6s-1 6 1 7 5-5 7-8 M17 4l3 3",
   rect: "M4 6h16v12H4z",
   ellipse: "M12 5c5 0 9 3 9 7s-4 7-9 7-9-3-9-7 4-7 9-7z",
+  cloud: "M7 18a4 4 0 0 1-1-7.9A5 5 0 0 1 15.5 8 4 4 0 0 1 18 18z",
+  eraser: "M16 4l5 5-10 10H6l-3-3z M11 9l5 5 M10 20h11",
   line: "M5 19L19 5",
   arrow: "M5 19L19 5 M10 5h9v9",
   note: "M4 4h16v12H9l-5 4z M8 8h8 M8 12h5",

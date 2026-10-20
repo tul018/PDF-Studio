@@ -50,7 +50,7 @@ interface AnnotBase {
   pageId: string;
 }
 
-export type ShapeKind = "highlight" | "rect" | "ellipse" | "whiteout" | "redact";
+export type ShapeKind = "highlight" | "rect" | "ellipse" | "cloud" | "whiteout" | "redact";
 
 export interface ShapeAnnot extends AnnotBase {
   type: ShapeKind;
@@ -95,12 +95,54 @@ export interface ImageAnnot extends AnnotBase {
   imageId: string;
 }
 
+export interface CommentReply {
+  author: string;
+  text: string;
+  /** Milliseconds since 1970. */
+  at: number;
+}
+
 export interface NoteAnnot extends AnnotBase {
   type: "note";
   x: number;
   y: number;
   text: string;
   color: string;
+  author?: string;
+  at?: number;
+  /** Marked done (resolved); open otherwise. */
+  done?: boolean;
+  replies?: readonly CommentReply[];
+}
+
+/**
+ * A cloud outline inside a w x h box (box-local, y up): bumps along the edges,
+ * as quadratic curves. `flip` negates y, for pdf-lib's drawSvgPath.
+ */
+export function cloudPath(w: number, h: number, flip = false): string {
+  const b = Math.max(2, Math.min(10, Math.min(w, h) / 6));
+  const x0 = b, y0 = b, x1 = Math.max(b, w - b), y1 = Math.max(b, h - b);
+  const fy = (y: number) => (flip ? -y : y);
+  let d = `M ${x0} ${fy(y0)}`;
+  // Corners in order around the box, with each edge's outward direction.
+  const edges: [number, number, number, number, number, number][] = [
+    [x0, y0, x1, y0, 0, -1],
+    [x1, y0, x1, y1, 1, 0],
+    [x1, y1, x0, y1, 0, 1],
+    [x0, y1, x0, y0, -1, 0],
+  ];
+  for (const [ax, ay, bx, by, nx, ny] of edges) {
+    const len = Math.hypot(bx - ax, by - ay);
+    const n = Math.max(1, Math.round(len / (b * 2.4)));
+    for (let i = 0; i < n; i++) {
+      const t0 = i / n, t1 = (i + 1) / n;
+      const mx = ax + (bx - ax) * ((t0 + t1) / 2) + nx * b * 2;
+      const my = ay + (by - ay) * ((t0 + t1) / 2) + ny * b * 2;
+      const ex = ax + (bx - ax) * t1, ey = ay + (by - ay) * t1;
+      d += ` Q ${mx} ${fy(my)} ${ex} ${fy(ey)}`;
+    }
+  }
+  return d + " Z";
 }
 
 export type Annotation = ShapeAnnot | InkAnnot | LineAnnot | TextAnnot | ImageAnnot | NoteAnnot;

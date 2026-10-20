@@ -39,6 +39,7 @@ import { BytesSource } from "./core/source";
 import { currentLanguage, initialLanguage, setLanguage } from "./ui/i18n";
 import { buildMenuBar, type MenuItem } from "./ui/menubar";
 import { openPalette } from "./ui/palette";
+import { CommentsPanel, savedAuthor } from "./viewer/commentsPanel";
 import { ToolOptionsUI } from "./ui/toolOptions";
 import { ocrPdf } from "./save/ocr";
 import { aboutDialog, shortcutsDialog } from "./ui/decorDialogs";
@@ -120,6 +121,7 @@ export class App {
   private fileVersion = "";
   private canvasChangePending = false;
   private folderPanel!: FolderPanel;
+  private comments!: CommentsPanel;
   /** Next open goes to a given place (folder search result): skip restoring the last position. */
   private skipRestoreView = false;
   private reader = new ReadAloud(
@@ -215,6 +217,21 @@ export class App {
     this.tabBar.onNew = () => void this.open();
     this.folderPanel = new FolderPanel($('[data-panel="folder"]'), this.platform);
     this.folderPanel.onOpen = (source, pageIndex, query) => void this.openSearchResult(source, pageIndex, query);
+    this.comments = new CommentsPanel($('[data-panel="comments"]'), {
+      state: () => this.history.state,
+      push: (s) => this.history.push(s),
+      pageNumber: (id) => this.history.state.pages.findIndex((p) => p.id === id) + 1,
+      goTo: (a) => {
+        const i = this.history.state.pages.findIndex((p) => p.id === a.pageId);
+        if (i < 0) return;
+        this.activeViewer.scrollToPage(i);
+        this.activePane.overlay.select(a.id);
+      },
+      askText: (t, initial) => promptText(t, initial, { multiline: true, placeholder: "Reply…" }),
+      setAuthor: (name) => {
+        for (const p of this.panes) p.overlay.author = name;
+      },
+    });
     this.bindToolbar();
     void checkUpdates(() => this.history.dirty || this.tabs.some(t => !!t.snapshot?.dirty));
     this.bindKeyboard();
@@ -305,6 +322,7 @@ export class App {
     search.onUpdate = (done, scanned, total) => this.onSearchUpdate(pane, done, scanned, total);
     this.bindSearchBar(pane);
 
+    overlay.author = savedAuthor();
     overlay.onRequestNoteText = (initial) =>
       promptText(initial ? "Edit comment" : "Add comment", initial, { multiline: true, placeholder: "Comment…" });
     overlay.onSelectionChange = (a) => {
@@ -765,6 +783,7 @@ export class App {
       p.forms.refreshValues(p.viewer.mountedSlots());
     }
     this.updateChrome();
+    if (this.comments && !$('[data-panel="comments"]').hidden) this.comments.render();
     if (this.history.dirty && this.mainDoc) {
       clearTimeout(this.draftTimer);
       this.draftTimer = window.setTimeout(() => this.writeDraftNow(), 3000);
@@ -1779,6 +1798,7 @@ export class App {
     document.body.classList.remove("sidebar-hidden");
     document.body.classList.toggle("folder-open", tab === "folder");
     if (tab === "folder") void this.folderPanel.show();
+    if (tab === "comments") this.comments.render();
     document.querySelectorAll<HTMLElement>("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
     document.querySelectorAll<HTMLElement>("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== tab));
   }
@@ -1844,6 +1864,8 @@ export class App {
         p: "ink",
         r: "rect",
         o: "ellipse",
+        c: "cloud",
+        e: "eraser",
         l: "line",
         a: "arrow",
         n: "note",

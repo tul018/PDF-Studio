@@ -10,7 +10,7 @@ import { canListAllFonts, installedFonts, loadAllFonts, loadFontsIfAllowed } fro
  */
 
 const KEY = "pdfstudio:toolopts";
-const LINE_TOOLS: Tool[] = ["ink", "rect", "ellipse", "line", "arrow"];
+const LINE_TOOLS: Tool[] = ["ink", "rect", "ellipse", "cloud", "line", "arrow"];
 export const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72];
 const HL_COLORS = ["#ffeb3b", "#a5d6a7", "#81d4fa", "#f8bbd0", "#ffcc80"];
 const TEXT_COLORS = ["#000000", "#e53935", "#1e63d6", "#2e7d32", "#6a1b9a"];
@@ -82,7 +82,7 @@ export class ToolOptionsUI {
     if (a) {
       if (a.type === "highlight") return "hl";
       if (a.type === "text") return "text";
-      if (a.type === "ink" || a.type === "line" || a.type === "arrow" || a.type === "rect" || a.type === "ellipse") return "line";
+      if (a.type === "ink" || a.type === "line" || a.type === "arrow" || a.type === "rect" || a.type === "ellipse" || a.type === "cloud") return "line";
       return "";
     }
     const t = this.tool();

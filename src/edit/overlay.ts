@@ -2,6 +2,7 @@ import type { History } from "./history";
 import {
   addAnnotation,
   annotationBounds,
+  cloudPath,
   removeAnnotations,
   rotVec,
   simplifyPoints,
@@ -26,6 +27,8 @@ export type Tool =
   | "highlight"
   | "rect"
   | "ellipse"
+  | "cloud"
+  | "eraser"
   | "line"
   | "arrow"
   | "ink"
@@ -72,7 +75,7 @@ export interface SearchHitProvider {
 }
 
 const SVGNS = "http://www.w3.org/2000/svg";
-const SHAPE_TOOLS: Tool[] = ["highlight", "rect", "ellipse", "whiteout", "redact"];
+const SHAPE_TOOLS: Tool[] = ["highlight", "rect", "ellipse", "cloud", "whiteout", "redact"];
 
 function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}) {
   const el = document.createElementNS(SVGNS, tag);
@@ -100,6 +103,8 @@ export class AnnotationOverlay implements Decorator {
   private editing: { id: string; ta: HTMLTextAreaElement; before?: EditState } | null = null;
   onSelectionChange: (a: Annotation | null) => void = () => {};
   onRequestNoteText: (initial: string) => Promise<string | null> = async () => null;
+  /** Name put on new comments and replies. */
+  author = "";
 
   constructor(
     private viewer: Viewer,
@@ -258,11 +263,16 @@ export class AnnotationOverlay implements Decorator {
       case "highlight":
       case "rect":
       case "ellipse":
+      case "cloud":
       case "whiteout":
       case "redact": {
         const g = boxGroup(a.box);
         const sw = a.strokeWidth;
-        if (a.type === "ellipse") {
+        if (a.type === "cloud") {
+          g.appendChild(svg("path", { d: cloudPath(a.box.w, a.box.h), fill: "none", stroke: a.color, "stroke-width": sw, "stroke-opacity": a.opacity, "stroke-linejoin": "round" }));
+          // Picking anywhere inside the cloud selects it.
+          g.appendChild(svg("rect", { x: 0, y: 0, width: a.box.w, height: a.box.h, fill: "transparent" }));
+        } else if (a.type === "ellipse") {
           g.appendChild(
             svg("ellipse", {
               cx: a.box.w / 2,
@@ -436,11 +446,13 @@ export class AnnotationOverlay implements Decorator {
       return;
     }
 
+    if (tool === "eraser") return this.dragErase(slot, e);
+
     if (tool === "note") {
       const [x, y] = v.toPdf(sx, sy);
       void this.onRequestNoteText("").then((text) => {
         if (!text) return;
-        const a: Annotation = { id: uid("a"), pageId, type: "note", x, y, text, color: "#ffd54f" };
+        const a: Annotation = { id: uid("a"), pageId, type: "note", x, y, text, color: "#ffd54f", author: this.author, at: Date.now() };
         this.history.push(addAnnotation(this.state, a));
       });
       return;
@@ -518,6 +530,45 @@ export class AnnotationOverlay implements Decorator {
         if ("box" in c && (c.box.w < 3 || c.box.h < 3)) return;
         if ((c.type === "line" || c.type === "arrow") && Math.hypot(c.x2 - c.x1, c.y2 - c.y1) < 3) return;
         this.history.push(addAnnotation(s0, c));
+      },
+    );
+  }
+
+  /** Eraser: every pen stroke the pointer passes over is removed (one undo step). */
+  private dragErase(slot: Slot, e: PointerEvent): void {
+    const v = slot.view;
+    const s0 = this.state;
+    const gone = new Set<string>();
+    const tol = 6 / v.scale;
+    const hit = (ev: PointerEvent) => {
+      const [px, py] = v.toPdf(...this.local(slot, ev));
+      for (const a of this.state.annotations) {
+        if (a.type !== "ink" || a.pageId !== slot.ref.id || gone.has(a.id)) continue;
+        const r = a.width / 2 + tol;
+        for (let i = 0; i < a.points.length; i += 2) {
+          const x0 = a.points[i], y0 = a.points[i + 1];
+          const x1 = a.points[i + 2] ?? x0, y1 = a.points[i + 3] ?? y0;
+          if (distToSegment(px, py, x0, y0, x1, y1) <= r) {
+            gone.add(a.id);
+            break;
+          }
+        }
+      }
+    };
+    hit(e);
+    let shown = 0;
+    trackPointer(
+      e,
+      slot.layers,
+      (ev) => hit(ev),
+      () => {
+        if (gone.size === shown) return;
+        shown = gone.size;
+        this.history.replace(removeAnnotations(s0, gone));
+      },
+      () => {
+        this.history.replace(s0);
+        if (gone.size) this.history.push(removeAnnotations(s0, gone));
       },
     );
   }
@@ -845,6 +896,13 @@ function mergeLineRects(rects: DOMRect[]): DOMRect[] {
  * mouse. Moves are applied once per animation frame: each edit redraws the
  * pages, and doing that for every mouse event is what made dragging stutter.
  */
+function distToSegment(px: number, py: number, x0: number, y0: number, x1: number, y1: number): number {
+  const dx = x1 - x0, dy = y1 - y0;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 ? Math.max(0, Math.min(1, ((px - x0) * dx + (py - y0) * dy) / len2)) : 0;
+  return Math.hypot(px - (x0 + t * dx), py - (y0 + t * dy));
+}
+
 export function trackPointer(
   e: PointerEvent,
   el: Element,

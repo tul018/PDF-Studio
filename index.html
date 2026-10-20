@@ -66,8 +66,10 @@
         <button class="tool-caret" data-tool-menu="text" title="Text options" aria-label="Text options" aria-haspopup="dialog" aria-expanded="false" data-needs-doc></button>
       </span>
       <button class="tool" data-tool="ink" data-icon="ink" title="Draw (P)" data-needs-doc><span>Draw</span></button>
+      <button class="tool" data-tool="eraser" data-icon="eraser" title="Eraser: drag over pen strokes (E)" data-needs-doc><span>Eraser</span></button>
       <button class="tool" data-tool="rect" data-icon="rect" title="Rectangle (R)" data-needs-doc><span>Box</span></button>
       <button class="tool" data-tool="ellipse" data-icon="ellipse" title="Ellipse (O)" data-needs-doc><span>Circle</span></button>
+      <button class="tool" data-tool="cloud" data-icon="cloud" title="Cloud (C)" data-needs-doc><span>Cloud</span></button>
       <button class="tool" data-tool="line" data-icon="line" title="Line (L)" data-needs-doc><span>Line</span></button>
       <button class="tool" data-tool="arrow" data-icon="arrow" title="Arrow (A)" data-needs-doc><span>Arrow</span></button>
       <button class="tool" data-tool="note" data-icon="note" title="Comment (N)" data-needs-doc><span>Comment</span></button>
@@ -110,6 +112,7 @@
           <button data-tab="pages" class="on" role="tab">Pages</button>
           <button data-tab="outline" role="tab">Outline</button>
           <button data-tab="marks" role="tab">Marks</button>
+          <button data-tab="comments" role="tab">Comments</button>
           <button data-tab="folder" role="tab" title="Search all PDFs in a folder (Ctrl+Shift+F)">Folder</button>
         </div>
         <div data-panel="pages" class="panel pages-panel">
@@ -140,6 +143,7 @@
           <ul id="marks-list" class="marks-list"></ul>
           <p id="marks-empty" class="muted empty-note">No marks yet. Press <kbd>M</kbd> or <kbd>Ctrl</kbd>+<kbd>D</kbd> to mark where you are, then click a mark to jump back.</p>
         </div>
+        <div data-panel="comments" class="panel comments-panel" hidden></div>
         <div data-panel="folder" class="panel folder-panel" hidden>
           <button class="btn block" data-folder-act="pick">Choose folder…</button>
           <div id="folder-name" class="folder-name muted small"></div>
