@@ -73,7 +73,9 @@ export async function hash2B(password: Uint8Array, salt: Uint8Array, udata: Uint
     for (let i = 0; i < 16; i++) sum += e[i];
     const alg = (["SHA-256", "SHA-384", "SHA-512"] as const)[sum % 3];
     k = await digest(alg, e);
-    if (round >= 63 && e[e.length - 1] <= round - 32) break;
+    // Rounds count from 1 in the standard: stop after round 64 or later once
+    // E's last byte <= round - 32. (Was one off: ~4% of files wouldn't open.)
+    if (round >= 63 && e[e.length - 1] <= round + 1 - 32) break;
   }
   return k.subarray(0, 32);
 }

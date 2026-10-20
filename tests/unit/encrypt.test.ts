@@ -39,4 +39,20 @@ describe("password protection (AES-256)", () => {
     const bytes = await saveEncrypted(await sample(), { userPassword: "open", ownerPassword: "boss" });
     expect((await open(bytes, "boss")).pages).toBe(2);
   }, 30_000);
+
+  it("every protected file opens: 60 files, random keys, both passwords", async () => {
+    // The key hash ends on a random byte; it used to stop one round early in ~4% of files.
+    let failed = 0;
+    for (let i = 0; i < 60; i++) {
+      const doc = await PDFDocument.create();
+      doc.addPage([100, 100]);
+      const bytes = await saveEncrypted(doc, { userPassword: "open", ownerPassword: "boss" });
+      for (const pw of ["open", "boss"]) {
+        const task = getDocument({ data: bytes.slice(), password: pw });
+        await task.promise.catch(() => failed++);
+        await task.destroy();
+      }
+    }
+    expect(failed).toBe(0);
+  }, 120_000);
 });
