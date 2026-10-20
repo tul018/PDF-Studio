@@ -194,6 +194,7 @@ test("number boxes in the menus can be clicked and typed into (menu stays open)"
 });
 
 test("installed fonts: pick one, it is embedded in the saved PDF and the text stays searchable", async ({ page, context }) => {
+  test.skip(process.platform !== "win32", "needs fonts installed on a Windows PC (Arial)");
   await context.grantPermissions(["local-fonts"]);
   await openPdf(page, "basic.pdf");
   await page.locator('[data-tool-menu="text"]').click();

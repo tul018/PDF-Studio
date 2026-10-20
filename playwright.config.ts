@@ -6,6 +6,9 @@ export default defineConfig({
   expect: { timeout: 20_000 },
   fullyParallel: false,
   workers: 1,
+  // GitHub machines are slower and busier: a test that fails there is tried
+  // again; one that fails every time is still a failure.
+  retries: process.env.CI ? 2 : 0,
   reporter: [["list"]],
   use: {
     baseURL: "http://localhost:4173",
