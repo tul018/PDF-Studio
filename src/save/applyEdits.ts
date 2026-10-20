@@ -24,7 +24,7 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { DEFAULT_SHAPE, headPart, headsOf, shapePath } from "../edit/shapes";
+import { DEFAULT_SHAPE, fillOf, headPart, headsOf, shapePath } from "../edit/shapes";
 import { cloudPath, rotVec, textLines, type PageLabelRule, type Annotation, type Box, type FormValue, type TextFont } from "../edit/model";
 import { saveEncrypted, type Protection } from "./encrypt";
 import { copyDocumentStructure, detachPageLinks, pruneUnreachable, relinkPage, type PageTarget } from "./structure";
@@ -371,9 +371,7 @@ async function drawAnnotation(
         width: Math.max(0, a.box.w - sw),
         height: Math.max(0, a.box.h - sw),
         rotate: degrees(a.box.rot),
-        borderColor: hexToRgb(a.color),
-        borderWidth: sw,
-        borderOpacity: a.opacity,
+        ...outlineAndFill(a),
       });
       return;
     }
@@ -386,23 +384,17 @@ async function drawAnnotation(
         xScale: Math.max(0, a.box.w / 2 - sw / 2),
         yScale: Math.max(0, a.box.h / 2 - sw / 2),
         rotate: degrees(a.box.rot),
-        borderColor: hexToRgb(a.color),
-        borderWidth: sw,
-        borderOpacity: a.opacity,
+        ...outlineAndFill(a),
       });
       return;
     }
     case "shape": {
       const { x, y } = corner(a.box, 0, 0);
-      const fill = a.fill ?? "none";
       page.drawSvgPath(shapePath(a.spec ?? DEFAULT_SHAPE, a.box.w, a.box.h, true), {
         x,
         y,
         rotate: degrees(a.box.rot),
-        borderColor: hexToRgb(a.color),
-        borderWidth: a.strokeWidth,
-        borderOpacity: a.opacity,
-        ...(fill === "none" ? {} : { color: hexToRgb(a.color), opacity: fill === "light" ? 0.25 : a.opacity }),
+        ...outlineAndFill(a),
       });
       return;
     }
@@ -522,6 +514,15 @@ async function drawAnnotation(
       return;
     }
   }
+}
+
+/** pdf-lib drawing options for a box shape: its outline (none at width 0) and its fill. */
+function outlineAndFill(a: { color: string; strokeWidth: number; opacity: number; fill?: "none" | "light" | "solid"; fillColor?: string; fillOpacity?: number }) {
+  const f = fillOf(a);
+  return {
+    ...(a.strokeWidth > 0 ? { borderColor: hexToRgb(a.color), borderWidth: a.strokeWidth, borderOpacity: a.opacity } : { borderWidth: 0 }),
+    ...(f ? { color: hexToRgb(f.color), opacity: f.opacity } : {}),
+  };
 }
 
 function pdfDate(d: Date): string {

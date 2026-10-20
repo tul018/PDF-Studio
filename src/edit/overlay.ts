@@ -19,7 +19,7 @@ import {
   type TextAnnot,
   type TextFont,
 } from "./model";
-import { DEFAULT_SHAPE, headPart, headsOf, shapePath, type HeadStyle, type ShapeFill, type ShapeSpec } from "./shapes";
+import { DEFAULT_SHAPE, fillOf, headPart, headsOf, shapePath, type HeadStyle, type ShapeSpec } from "./shapes";
 import type { Decorator, Slot, Viewer } from "../viewer/viewer";
 
 export type Tool =
@@ -60,7 +60,9 @@ export interface ToolOptions {
   highlightH: number;
   /** Shape tool: outline and fill. */
   shape: ShapeSpec;
-  shapeFill: ShapeFill;
+  /** Box, circle and shape fill: a colour or "none", and its opacity. */
+  fillColor: string;
+  fillOpacity: number;
   /** Arrow tool: heads at the start and the end. */
   arrowStart: HeadStyle;
   arrowEnd: HeadStyle;
@@ -78,7 +80,8 @@ export function defaultToolOptions(): ToolOptions {
     highlightW: 120,
     highlightH: 14,
     shape: { ...DEFAULT_SHAPE },
-    shapeFill: "none",
+    fillColor: "none",
+    fillOpacity: 0.3,
     arrowStart: "none",
     arrowEnd: "open",
   };
@@ -169,17 +172,23 @@ export class AnnotationOverlay implements Decorator {
 
   /** Recolor / restyle the selected annotation. */
   styleSelected(
-    patch: Partial<{ color: string; strokeWidth: number; fontSize: number; font: TextFont; opacity: number; shape: ShapeSpec; shapeFill: ShapeFill; arrowStart: HeadStyle; arrowEnd: HeadStyle }>,
+    patch: Partial<{ color: string; strokeWidth: number; fontSize: number; font: TextFont; opacity: number; shape: ShapeSpec; fillColor: string; fillOpacity: number; arrowStart: HeadStyle; arrowEnd: HeadStyle }>,
   ): void {
     const a = this.selected;
     if (!a) return;
     const p: Record<string, unknown> = {};
     if (a.type === "shape" && patch.shape) p.spec = { ...patch.shape };
-    if (a.type === "shape" && patch.shapeFill) p.fill = patch.shapeFill;
+    const fillable = a.type === "shape" || a.type === "rect" || a.type === "ellipse" || a.type === "cloud";
+    if (fillable && patch.fillColor !== undefined) p.fillColor = patch.fillColor;
+    if (fillable && patch.fillOpacity !== undefined) {
+      p.fillOpacity = patch.fillOpacity;
+      // Older shapes kept their fill in the outline colour: carry it over.
+      if (a.fillColor === undefined && patch.fillColor === undefined) p.fillColor = fillOf(a)?.color ?? "none";
+    }
     if ((a.type === "arrow" || a.type === "line") && patch.arrowStart) p.start = patch.arrowStart;
     if ((a.type === "arrow" || a.type === "line") && patch.arrowEnd) p.end = patch.arrowEnd;
     if (patch.color && "color" in a && a.color !== patch.color) p.color = patch.color;
-    if (patch.strokeWidth !== undefined && "strokeWidth" in a && a.type !== "highlight" && a.strokeWidth !== patch.strokeWidth)
+    if (patch.strokeWidth !== undefined && "strokeWidth" in a && a.type !== "highlight" && a.strokeWidth !== patch.strokeWidth && (patch.strokeWidth > 0 || fillable))
       p.strokeWidth = patch.strokeWidth;
     if (patch.strokeWidth !== undefined && "width" in a && a.width !== patch.strokeWidth) p.width = patch.strokeWidth;
     if (patch.opacity !== undefined && a.type === "highlight" && a.opacity !== patch.opacity) p.opacity = patch.opacity;
@@ -293,14 +302,14 @@ export class AnnotationOverlay implements Decorator {
       case "redact": {
         const g = boxGroup(a.box);
         const sw = a.strokeWidth;
+        const fl = fillOf(a);
         if (a.type === "shape") {
-          const fill = a.fill ?? "none";
           g.appendChild(
             svg("path", {
               d: shapePath(a.spec ?? DEFAULT_SHAPE, a.box.w, a.box.h),
-              fill: fill === "none" ? "none" : a.color,
-              "fill-opacity": fill === "light" ? 0.25 : a.opacity,
-              stroke: a.color,
+              fill: fl ? fl.color : "none",
+              "fill-opacity": fl ? fl.opacity : 0,
+              stroke: sw > 0 ? a.color : "none",
               "stroke-width": sw,
               "stroke-opacity": a.opacity,
               "stroke-linejoin": "round",
@@ -318,7 +327,8 @@ export class AnnotationOverlay implements Decorator {
               cy: a.box.h / 2,
               rx: Math.max(0, a.box.w / 2 - sw / 2),
               ry: Math.max(0, a.box.h / 2 - sw / 2),
-              fill: "none",
+              fill: fl ? fl.color : "none",
+              "fill-opacity": fl ? fl.opacity : 0,
               stroke: a.color,
               "stroke-width": sw,
               "stroke-opacity": a.opacity,
@@ -335,7 +345,8 @@ export class AnnotationOverlay implements Decorator {
               y: sw / 2,
               width: Math.max(0, a.box.w - sw),
               height: Math.max(0, a.box.h - sw),
-              fill: "none",
+              fill: fl ? fl.color : "none",
+              "fill-opacity": fl ? fl.opacity : 0,
               stroke: a.color,
               "stroke-width": sw,
               "stroke-opacity": a.opacity,
@@ -568,7 +579,8 @@ export class AnnotationOverlay implements Decorator {
         color: isHl ? o.highlightColor : o.color,
         strokeWidth: isHl ? 0 : o.strokeWidth,
         opacity: isHl ? o.highlightOpacity : 1,
-        ...(tool === "shape" ? { spec: { ...o.shape }, fill: o.shapeFill } : {}),
+        ...(tool === "shape" ? { spec: { ...o.shape } } : {}),
+        ...(tool === "shape" || tool === "rect" || tool === "ellipse" ? { fillColor: o.fillColor, fillOpacity: o.fillOpacity } : {}),
       };
     };
     // A fixed-size highlight shows where it will land as soon as you press.
@@ -873,6 +885,11 @@ export class AnnotationOverlay implements Decorator {
     } else {
       this.viewer.redecorate(a.pageId);
     }
+  }
+
+  /** Edit comment button (or double-click). */
+  editNoteById(id: string): Promise<void> {
+    return this.editNote(id);
   }
 
   private async editNote(id: string): Promise<void> {

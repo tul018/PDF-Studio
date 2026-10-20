@@ -62,7 +62,11 @@ export interface ShapeAnnot extends AnnotBase {
   opacity: number;
   /** "shape": which outline (polygon, star, heart, cloud) and its settings. */
   spec?: ShapeSpec;
+  /** Older shapes: fill in the outline colour (light or solid). */
   fill?: ShapeFill;
+  /** Fill colour ("none" = no fill) and how solid it is (0..1); outline is color + strokeWidth (0 = none). */
+  fillColor?: string;
+  fillOpacity?: number;
 }
 
 export interface InkAnnot extends AnnotBase {

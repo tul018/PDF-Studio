@@ -16,6 +16,13 @@ export interface ShapeSpec {
 
 export type ShapeFill = "none" | "light" | "solid";
 
+/** A box shape's fill (color, opacity) or null; shapes made before fills had their own colour use the outline colour. */
+export function fillOf(a: { color: string; opacity: number; fill?: ShapeFill; fillColor?: string; fillOpacity?: number }): { color: string; opacity: number } | null {
+  if (a.fillColor !== undefined) return a.fillColor === "none" ? null : { color: a.fillColor, opacity: a.fillOpacity ?? 1 };
+  if (!a.fill || a.fill === "none") return null;
+  return { color: a.color, opacity: a.fill === "light" ? 0.25 : a.opacity };
+}
+
 export const DEFAULT_SHAPE: ShapeSpec = { kind: "polygon", sides: 6, inner: 0.5 };
 
 /** Path in box-local space (0..w, 0..h, y up); `flip` negates y for pdf-lib. */

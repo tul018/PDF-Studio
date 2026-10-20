@@ -19,6 +19,8 @@ import {
   TEXT_FONTS,
   uid,
   type Annotation,
+  rotVec,
+  updateAnnotation,
   type FormValue,
   pageLabel,
   type EditState,
@@ -1679,6 +1681,27 @@ export class App {
     if (img) this.activePane.overlay.placeImage(img.id, img.img);
   }
 
+  /** Replace…: a new picture, signature or stamp in the selected one's place (same centre and width). */
+  private async replaceImage(): Promise<void> {
+    const a = this.panes.map((p) => p.overlay.selected).find(Boolean);
+    if (!a || a.type !== "image") return;
+    const pick = await choiceDialog("Replace with", "It keeps the same place and width on the page.", ["Picture from file…", "Signature…", "Stamp…", "Cancel"]);
+    let blob: Blob | null = null;
+    if (pick === 0) blob = await this.platform.pickImage();
+    else if (pick === 1) blob = await signaturePad();
+    else if (pick === 2) blob = (await stampDialog(() => this.platform.pickImage()))?.png ?? null;
+    if (!blob) return;
+    const img = await this.storeImage(blob);
+    if (!img) return;
+    const b = a.box;
+    const h = (b.w * img.img.height) / img.img.width;
+    // Same centre: the box grows or shrinks around it to the new picture's proportions.
+    const [cx, cy] = rotVec(b.rot, b.w / 2, b.h / 2);
+    const [nx, ny] = rotVec(b.rot, b.w / 2, h / 2);
+    const box = { ...b, h, x: b.x + cx - nx, y: b.y + cy - ny };
+    this.history.push(updateAnnotation(this.history.state, a.id, { imageId: img.id, box } as Partial<Annotation>));
+  }
+
   private async addSignature(): Promise<void> {
     if (!this.mainDoc) return;
     const blob = await signaturePad();
@@ -2146,6 +2169,13 @@ export class App {
         return void this.addImage();
       case "signature":
         return void this.addSignature();
+      case "replaceImage":
+        return void this.replaceImage();
+      case "editNote": {
+        const id = this.panes.map((p) => p.overlay.selectedId).find(Boolean);
+        if (id) void this.activePane.overlay.editNoteById(id);
+        return;
+      }
       case "deleteSel":
         for (const p of this.panes) p.overlay.deleteSelected();
         return;
@@ -2266,7 +2296,7 @@ export class App {
         o: "ellipse",
         c: "shape",
         e: "eraser",
-        l: "line",
+        l: "arrow",
         a: "arrow",
         n: "note",
         u: "highlight",

@@ -19,10 +19,10 @@ test("shapes (star with fill, hexagon) and a two-headed arrow; comment shows on 
   };
   await page.locator('[data-tool-menu="shape"]').click();
   await page.locator(".shape-tile", { hasText: /^Star$/ }).click();
-  await page.locator(".pop-choice button", { hasText: "Solid fill" }).click();
+  await page.locator(".tool-pop .swatch[title=\"#ffeb3b\"]").click(); // yellow fill
   await page.keyboard.press("Escape");
   await drag(60, 260, 160, 360);
-  await expect(page.locator('.annot path[fill="#e53935"]')).toHaveCount(1);
+  await expect(page.locator('.annot path[fill="#ffeb3b"][stroke="#e53935"]')).toHaveCount(1); // fill and outline
   // Changing the menu restyles the selected shape: select it, pick Hexagon.
   await page.keyboard.press("v");
   await page.mouse.click(b.x + 110, b.y + 310);

@@ -1,7 +1,7 @@
 import type { AnnotationOverlay, HighlightMode, Tool, ToolOptions } from "../edit/overlay";
 import { textFontCss, type Annotation, type TextFont } from "../edit/model";
 import { canListAllFonts, installedFonts, loadAllFonts, loadFontsIfAllowed } from "./systemFonts";
-import { headsOf, shapePath, type HeadStyle, type ShapeFill, type ShapeSpec } from "../edit/shapes";
+import { fillOf, headsOf, shapePath, type HeadStyle, type ShapeSpec } from "../edit/shapes";
 
 /**
  * The tool settings strip (only what the current tool or selection uses:
@@ -23,7 +23,11 @@ const FONT_NAMES: [TextFont, string][] = [
 ];
 const fontLabel = (f: TextFont) => FONT_NAMES.find(([v]) => v === f)?.[1] ?? f;
 
-type Context = "" | "line" | "text" | "hl";
+/** "shape": box, circle and shapes, which have a fill as well as an outline. */
+type Context = "" | "line" | "shape" | "text" | "hl";
+const FILL_TOOLS: Tool[] = ["rect", "ellipse", "shape"];
+const FILL_TYPES = ["rect", "ellipse", "shape", "cloud"];
+const FILL_COLORS = ["#ffeb3b", "#ffcdd2", "#bbdefb", "#c8e6c9", "#e1bee7", "#ffffff", "#9e9e9e", "#000000"];
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel)!;
 
@@ -86,12 +90,14 @@ export class ToolOptionsUI {
     if (a) {
       if (a.type === "highlight") return "hl";
       if (a.type === "text") return "text";
+      if (FILL_TYPES.includes(a.type)) return "shape";
       if (a.type === "ink" || a.type === "line" || a.type === "arrow" || a.type === "rect" || a.type === "ellipse" || a.type === "cloud" || a.type === "shape") return "line";
       return "";
     }
     const t = this.tool();
     if (t === "highlight") return "hl";
     if (t === "text") return "text";
+    if (FILL_TOOLS.includes(t)) return "shape";
     return LINE_TOOLS.includes(t) ? "line" : "";
   }
 
@@ -112,7 +118,8 @@ export class ToolOptionsUI {
     if (patch.fontSize !== undefined) style.fontSize = patch.fontSize;
     if (patch.font !== undefined) style.font = patch.font;
     if (patch.shape) style.shape = patch.shape;
-    if (patch.shapeFill) style.shapeFill = patch.shapeFill;
+    if (patch.fillColor !== undefined) style.fillColor = patch.fillColor;
+    if (patch.fillOpacity !== undefined) style.fillOpacity = patch.fillOpacity;
     if (patch.arrowStart) style.arrowStart = patch.arrowStart;
     if (patch.arrowEnd) style.arrowEnd = patch.arrowEnd;
     if (Object.keys(style).length) for (const o of this.overlays()) o.styleSelected(style);
@@ -123,6 +130,7 @@ export class ToolOptionsUI {
   sync(): void {
     const ctx = this.context();
     document.body.dataset.opts = ctx;
+    document.body.dataset.sel = this.selected()?.type ?? "";
     const a = this.selected();
     const o = this.opts;
     const color = $<HTMLInputElement>("#opt-color");
@@ -131,7 +139,18 @@ export class ToolOptionsUI {
     color.value = c;
     color.parentElement!.title = hl ? "Highlight color" : "Color";
     const width = a && "width" in a ? a.width : a && a.type !== "highlight" && "strokeWidth" in a ? a.strokeWidth : o.strokeWidth;
-    setSelect($<HTMLSelectElement>("#opt-width"), String(width), `${width} pt`);
+    const wsel = $<HTMLSelectElement>("#opt-width");
+    const none = wsel.querySelector('option[value="0"]');
+    if (ctx === "shape" && !none) wsel.add(new Option("No outline", "0"), 0);
+    if (ctx !== "shape" && none) none.remove();
+    setSelect(wsel, String(width), `${width} pt`);
+    const fl = a && FILL_TYPES.includes(a.type) ? fillOf(a as Parameters<typeof fillOf>[0]) : o.fillColor === "none" ? null : { color: o.fillColor, opacity: o.fillOpacity };
+    $<HTMLInputElement>("#opt-fill-on").checked = !!fl;
+    $<HTMLInputElement>("#opt-fill").value = fl?.color ?? (o.fillColor !== "none" ? o.fillColor : "#ffeb3b");
+    const fop = Math.round((fl?.opacity ?? o.fillOpacity) * 100);
+    $<HTMLInputElement>("#opt-fill-op").value = String(fop);
+    $("#opt-fill-op-val").textContent = `${fop}%`;
+    $(".opt-fill").classList.toggle("off", !fl);
     const font = (a?.type === "text" ? a.font : o.font) ?? "sans";
     setSelect($<HTMLSelectElement>("#opt-family"), font, fontLabel(font));
     if (document.activeElement !== $("#opt-font")) $<HTMLInputElement>("#opt-font").value = String(a?.type === "text" ? a.fontSize : o.fontSize);
@@ -171,6 +190,14 @@ export class ToolOptionsUI {
         size.blur();
       }
     });
+    // Fill of boxes, circles and shapes: on/off, colour, how solid.
+    const fillOn = $<HTMLInputElement>("#opt-fill-on");
+    const fillColor = $<HTMLInputElement>("#opt-fill");
+    const fillOp = $<HTMLInputElement>("#opt-fill-op");
+    fillOn.addEventListener("change", () => this.set({ fillColor: fillOn.checked ? fillColor.value : "none" }));
+    fillColor.addEventListener("input", () => this.set({ fillColor: fillColor.value }));
+    fillOp.addEventListener("input", () => ($("#opt-fill-op-val").textContent = `${fillOp.value}%`));
+    fillOp.addEventListener("change", () => this.set({ fillOpacity: Number(fillOp.value) / 100, ...(fillOn.checked ? {} : { fillColor: fillColor.value }) }));
     const opacity = $<HTMLInputElement>("#opt-opacity");
     opacity.addEventListener("input", () => {
       $("#opt-opacity-val").textContent = `${opacity.value}%`;
@@ -277,8 +304,9 @@ export class ToolOptionsUI {
   private shapeMenu(pop: HTMLElement): void {
     const a = this.selected();
     const spec: ShapeSpec = a?.type === "shape" && a.spec ? a.spec : this.opts.shape;
-    const fill: ShapeFill = a?.type === "shape" ? (a.fill ?? "none") : this.opts.shapeFill;
     const color = a && "color" in a ? a.color : this.opts.color;
+    const fl = a && FILL_TYPES.includes(a.type) ? fillOf(a as Parameters<typeof fillOf>[0]) : this.opts.fillColor === "none" ? null : { color: this.opts.fillColor, opacity: this.opts.fillOpacity };
+    const width = a && "strokeWidth" in a ? a.strokeWidth : this.opts.strokeWidth;
     const put = (p: Partial<ShapeSpec>) => this.set({ shape: { ...spec, ...p } });
     const grid = document.createElement("div");
     grid.className = "pop-shapes";
@@ -324,21 +352,34 @@ export class ToolOptionsUI {
         }),
       );
     }
+    const noFill = document.createElement("button");
+    noFill.type = "button";
+    noFill.className = "btn small pop-none";
+    noFill.textContent = "No fill";
+    noFill.classList.toggle("on", !fl);
+    noFill.addEventListener("click", () => this.set({ fillColor: "none" }));
+    const noLine = document.createElement("button");
+    noLine.type = "button";
+    noLine.className = "btn small pop-none";
+    noLine.textContent = "No outline";
+    noLine.classList.toggle("on", width === 0);
+    noLine.addEventListener("click", () => this.set({ strokeWidth: 0 }));
+    const fillSw = swatches(FILL_COLORS, fl?.color ?? "#ffffff", (c) => this.set({ fillColor: c }));
+    if (!fl) fillSw.querySelectorAll(".swatch.on").forEach((s) => s.classList.remove("on"));
+    fillSw.prepend(noFill);
+    const lineSw = swatches(TEXT_COLORS, color, (c) => this.set({ color: c, ...(width === 0 ? { strokeWidth: 2 } : {}) }));
+    if (width === 0) lineSw.querySelectorAll(".swatch.on").forEach((s) => s.classList.remove("on"));
+    lineSw.prepend(noLine);
     pop.append(
       heading("Fill"),
-      choice<ShapeFill>(
-        [
-          ["none", "Outline only"],
-          ["light", "Light fill"],
-          ["solid", "Solid fill"],
-        ],
-        fill,
-        (f) => this.set({ shapeFill: f }),
-      ),
-      heading("Color"),
-      swatches(TEXT_COLORS, color, (c) => this.set({ color: c })),
+      fillSw,
+      range(Math.round((fl?.opacity ?? this.opts.fillOpacity) * 100), 10, 100, (v, done) => {
+        if (done) this.set({ fillOpacity: v / 100, ...(fl ? {} : { fillColor: "#ffeb3b" }) });
+      }),
+      heading("Outline"),
+      lineSw,
+      note("Select a shape to change its fill or outline later (also in the strip above)."),
     );
-    pop.append(note("Drag on the page to draw. Line thickness is in the strip above."));
   }
 
   /** Arrow tool: the head at each end (both, one, or none). Applies to a selected arrow too. */
@@ -484,7 +525,9 @@ function sanitize(s: Partial<ToolOptions>): Partial<ToolOptions> {
   const heads = ["none", "open", "closed", "circle", "bar"];
   if (heads.includes(s.arrowStart as string)) out.arrowStart = s.arrowStart;
   if (heads.includes(s.arrowEnd as string)) out.arrowEnd = s.arrowEnd;
-  if (s.shapeFill === "none" || s.shapeFill === "light" || s.shapeFill === "solid") out.shapeFill = s.shapeFill;
+  if (s.fillColor === "none" || hex(s.fillColor)) out.fillColor = s.fillColor;
+  if (num(s.fillOpacity, 0.05, 1)) out.fillOpacity = s.fillOpacity;
+  if (num(s.strokeWidth, 0, 50)) out.strokeWidth = s.strokeWidth;
   const sh = s.shape;
   if (sh && ["cloud", "polygon", "star", "heart"].includes(sh.kind) && num(sh.sides, 3, 12) && num(sh.inner, 0.1, 0.95)) out.shape = { kind: sh.kind, sides: sh.sides, inner: sh.inner };
   return out;

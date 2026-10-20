@@ -109,8 +109,16 @@ body.has-selection .tool.sel-only { display: inline-flex; color: var(--danger); 
 #opt-opacity-val { min-width: 32px; }
 /* Only the settings the current tool or selection uses. */
 .opt-any, .opt-line, .opt-text, .opt-hl { display: none; }
-body:is([data-opts="line"], [data-opts="text"], [data-opts="hl"]) .opt-any { display: inline-flex; }
-body[data-opts="line"] .opt-line, body[data-opts="text"] .opt-text, body[data-opts="hl"] .opt-hl { display: inline-flex; }
+body:is([data-opts="line"], [data-opts="shape"], [data-opts="text"], [data-opts="hl"]) .opt-any { display: inline-flex; }
+body:is([data-opts="line"], [data-opts="shape"]) .opt-line, body[data-opts="shape"] .opt-fill, body[data-opts="text"] .opt-text, body[data-opts="hl"] .opt-hl { display: inline-flex; }
+.opt-fill { align-items: center; gap: 4px; }
+/* Buttons for the selected item only: Replace… (picture, signature, stamp), Edit comment. */
+.sel-image, .sel-note { display: none; }
+body[data-sel="image"] .sel-image, body[data-sel="note"] .sel-note { display: inline-flex; }
+.opt-fill.off #opt-fill, .opt-fill.off #opt-fill-op, .opt-fill.off #opt-fill-op-val { opacity: 0.4; }
+.opt-fill #opt-fill-op { width: 70px; }
+.pop-none { padding: 3px 8px; font-size: 12px; margin-right: 4px; }
+.pop-none.on { border-color: var(--accent); color: var(--accent); }
 /* Tool with a drop-down arrow for its extra settings. */
 .tool-split { display: inline-flex; align-items: stretch; flex: none; border-radius: 6px; }
 .tool-split .tool { border-radius: 6px 0 0 6px; padding-right: 4px; }
