@@ -133,6 +133,9 @@ export class Viewer {
     this.dpr = Math.min(window.devicePixelRatio || 1, this.profile.maxDpr);
   }
 
+  /** Layer visibility for a page's document (View › Layers), or undefined for the file's own. */
+  layers: (ref: PageRef) => Promise<unknown> | undefined = () => undefined;
+
   addDecorator(d: Decorator): void {
     this.decorators.push(d);
     for (const s of this.slots.values()) d.decorate(s);
@@ -289,6 +292,23 @@ export class Viewer {
     // bitmaps are CSS-scaled (cheap, smooth).
     this.zoomRenderTimer = window.setTimeout(() => this.requestUpdate(), 160);
     this.requestUpdate(false);
+  }
+
+  /** Zoom so a rectangle of a page (user space) fills the window, centred. */
+  zoomToRect(index: number, rect: number[]): void {
+    const ref = this.pages[index];
+    if (!ref) return;
+    const corners = (v: View) => [v.toView(rect[0], rect[1]), v.toView(rect[2], rect[3])];
+    const [[ax, ay], [bx, by]] = corners(this.viewFor(ref));
+    const w = Math.max(4, Math.abs(bx - ax)),
+      h = Math.max(4, Math.abs(by - ay));
+    const f = Math.min((this.scroller.clientWidth - SIDE_PAD * 2) / w, (this.scroller.clientHeight - 24) / h);
+    this.setZoom(this.zoomValue * f);
+    const [[cx0, cy0], [cx1, cy1]] = corners(this.viewFor(ref));
+    this.scroller.scrollTop = Math.max(0, this.layout.top(index) + (cy0 + cy1) / 2 - this.scroller.clientHeight / 2);
+    this.scroller.scrollLeft = Math.max(0, this.pageLeft(index) + (cx0 + cx1) / 2 - this.scroller.clientWidth / 2);
+    this.setCurrent(index);
+    this.requestUpdate();
   }
 
   setFit(mode: FitMode): void {
@@ -730,6 +750,7 @@ export class Viewer {
       viewport: vp,
       annotationMode: AnnotationMode.ENABLE_FORMS,
       background: "white",
+      optionalContentConfigPromise: this.layers(slot.ref),
     } as Parameters<PDFPageProxy["render"]>[0]);
     const onAbort = () => task.cancel();
     signal.addEventListener("abort", onAbort);

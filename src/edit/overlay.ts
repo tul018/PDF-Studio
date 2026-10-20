@@ -30,6 +30,8 @@ export type Tool =
   | "cloud"
   | "eraser"
   | "crop"
+  | "zoomArea"
+  | "snapshot"
   | "line"
   | "arrow"
   | "ink"
@@ -106,6 +108,9 @@ export class AnnotationOverlay implements Decorator {
   onRequestNoteText: (initial: string) => Promise<string | null> = async () => null;
   /** Crop tool: a rectangle (user space [x0, y0, x1, y1]) was dragged on a page. */
   onCrop: (pageId: string, rect: number[]) => void = () => {};
+  /** Zoom-to-area and snapshot tools: the dragged rectangle, same form. */
+  onZoomArea: (pageId: string, rect: number[]) => void = () => {};
+  onSnapshot: (pageId: string, rect: number[]) => void = () => {};
   /** Name put on new comments and replies. */
   author = "";
 
@@ -450,7 +455,9 @@ export class AnnotationOverlay implements Decorator {
     }
 
     if (tool === "eraser") return this.dragErase(slot, e);
-    if (tool === "crop") return this.dragCrop(slot, e);
+    if (tool === "crop") return this.dragFrame(slot, e, (r) => this.onCrop(slot.ref.id, r));
+    if (tool === "zoomArea") return this.dragFrame(slot, e, (r) => this.onZoomArea(slot.ref.id, r));
+    if (tool === "snapshot") return this.dragFrame(slot, e, (r) => this.onSnapshot(slot.ref.id, r));
 
     if (tool === "note") {
       const [x, y] = v.toPdf(sx, sy);
@@ -538,8 +545,8 @@ export class AnnotationOverlay implements Decorator {
     );
   }
 
-  /** Crop: drag the part of the page to keep; a dashed frame shows it. */
-  private dragCrop(slot: Slot, e: PointerEvent): void {
+  /** Crop, zoom to area, snapshot: drag a dashed frame; `done` gets it in user space. */
+  private dragFrame(slot: Slot, e: PointerEvent, done: (rect: number[]) => void): void {
     const v = slot.view;
     const [sx, sy] = this.local(slot, e);
     let cx = sx,
@@ -564,7 +571,7 @@ export class AnnotationOverlay implements Decorator {
         if (Math.abs(cx - sx) < 8 || Math.abs(cy - sy) < 8) return;
         const [ax, ay] = v.toPdf(sx, sy);
         const [bx, by] = v.toPdf(cx, cy);
-        this.onCrop(slot.ref.id, [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)]);
+        done([Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)]);
       },
     );
   }

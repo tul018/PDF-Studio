@@ -41,6 +41,7 @@ import { BytesSource } from "./core/source";
 import { currentLanguage, initialLanguage, setLanguage } from "./ui/i18n";
 import { buildMenuBar, type MenuItem } from "./ui/menubar";
 import { openPalette } from "./ui/palette";
+import { attachmentsDialog, layersDialog } from "./ui/docExtras";
 import { CommentsPanel, savedAuthor } from "./viewer/commentsPanel";
 import { ToolOptionsUI } from "./ui/toolOptions";
 import { ocrPdf } from "./save/ocr";
@@ -127,6 +128,8 @@ export class App {
   private comments!: CommentsPanel;
   /** Pages copied or cut with Ctrl+C / Ctrl+X, with their annotations. */
   private lastLabels: EditState["pageLabels"];
+  /** View › Layers: visibility per document, once changed. */
+  private layerConfigs = new Map<string, Promise<unknown>>();
   private pageClip: { pages: PageRef[]; annotations: Annotation[] } | null = null;
   /** Next open goes to a given place (folder search result): skip restoring the last position. */
   private skipRestoreView = false;
@@ -262,6 +265,9 @@ export class App {
       get annotations() {
         return app.history.state.annotations.length;
       },
+      get zoom() {
+        return app.activeViewer.zoom;
+      },
     };
     window.addEventListener("beforeunload", (e) => {
       if (this.history.dirty || this.tabs.some((t) => t.snapshot?.dirty)) {
@@ -314,6 +320,7 @@ export class App {
     $("#panes").appendChild(root);
 
     const viewer = new Viewer(scroller, this.store, this.profile);
+    viewer.layers = (ref) => (ref.docId ? this.layerConfigs.get(ref.docId) : undefined);
     const mode = document.querySelector<HTMLSelectElement>("#view-mode")?.value as ViewMode | undefined;
     if (mode && mode !== "continuous") viewer.setViewMode(mode);
     const search = new Search(this.store, this.textCache);
@@ -331,6 +338,11 @@ export class App {
 
     overlay.author = savedAuthor();
     overlay.onCrop = (pageId, rect) => void this.cropFromDrag(pageId, rect);
+    overlay.onZoomArea = (pageId, rect) => {
+      viewer.zoomToRect(this.history.state.pages.findIndex((p) => p.id === pageId), rect);
+      this.setTool("select");
+    };
+    overlay.onSnapshot = (pageId, rect) => void this.snapshot(pageId, rect);
     overlay.onRequestNoteText = (initial) =>
       promptText(initial ? "Edit comment" : "Add comment", initial, { multiline: true, placeholder: "Comment…" });
     overlay.onSelectionChange = (a) => {
@@ -735,6 +747,7 @@ export class App {
     this.images.clear();
     this.marks.clear();
     this.pageClip = null; // its pages belong to the documents closing now
+    this.layerConfigs.clear();
     await this.store.closeAll();
     this.mainDoc = null;
     $("#outline").replaceChildren();
@@ -1284,6 +1297,59 @@ export class App {
     this.setTool("select");
   }
 
+  /** View › Layers for the main document. */
+  private async showLayers(): Promise<void> {
+    const doc = this.mainDoc;
+    if (!doc) return;
+    let p = this.layerConfigs.get(doc.id);
+    if (!p) {
+      p = doc.pdf.getOptionalContentConfig();
+      this.layerConfigs.set(doc.id, p);
+    }
+    layersDialog((await p) as Parameters<typeof layersDialog>[0], () => {
+      for (const pane of this.panes) pane.viewer.invalidateAll();
+    });
+  }
+
+  /** View › Attachments: files embedded in the PDF. */
+  private async showAttachments(): Promise<void> {
+    const doc = this.mainDoc;
+    if (!doc) return;
+    const raw = ((await doc.pdf.getAttachments()) ?? {}) as Record<string, { filename: string; content: Uint8Array }>;
+    attachmentsDialog(Object.values(raw), (f) => {
+      async function* one() {
+        yield { name: f.filename.split(/[\\/]/).pop() || "attachment", bytes: f.content, mime: "application/octet-stream" };
+      }
+      void this.platform.saveMany(one()).then((r) => r && toast(`Saved ${f.filename}`, "ok"));
+    });
+  }
+
+  /** Snapshot tool: the framed part of the page, sharp (200 dpi), to the clipboard (or a PNG file). */
+  private async snapshot(pageId: string, rect: number[]): Promise<void> {
+    this.setTool("select");
+    const ref = this.history.state.pages.find((p) => p.id === pageId);
+    const page = ref && (await this.store.getPage(ref));
+    if (!ref || !page) return;
+    const crop = cropViewport(page, rect, 200 / 72, this.store.rotation(ref));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(crop.width));
+    canvas.height = Math.max(1, Math.round(crop.height));
+    await page.render({ canvas, viewport: crop.viewport, background: "white" } as Parameters<typeof page.render>[0]).promise;
+    const blob = await new Promise<Blob>((r) => canvas.toBlob((b) => r(b!), "image/png"));
+    canvas.width = canvas.height = 0;
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      toast("Picture copied. Paste it into LINE, Word or an email (Ctrl+V).", "ok", 5000);
+    } catch {
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      async function* one() {
+        yield { name: "snapshot.png", bytes, mime: "image/png" };
+      }
+      const r = await this.platform.saveMany(one());
+      if (r) toast("Saved the picture as snapshot.png", "ok");
+    }
+  }
+
   /** Edit › Pages › Page labels: numbering such as i, ii for the front pages, then 1, 2... */
   private async editPageLabels(): Promise<void> {
     const s = this.history.state;
@@ -1790,6 +1856,16 @@ export class App {
         return void this.revert();
       case "palette":
         return openPalette();
+      case "zoomArea":
+        this.setTool("zoomArea");
+        return void toast("Drag a frame around the part to zoom in on.", "info", 4000);
+      case "snapshot":
+        this.setTool("snapshot");
+        return void toast("Drag a frame around the part to copy as a picture.", "info", 4000);
+      case "layers":
+        return void this.showLayers();
+      case "attachments":
+        return void this.showAttachments();
       case "cropTool":
         this.setTool("crop");
         return void toast("Drag a frame around the part of the page to keep.", "info", 5000);

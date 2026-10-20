@@ -577,3 +577,7 @@ textarea.modal-input { height: 110px; padding: 8px; resize: vertical; }
 .label-rule .num-input, .label-rule select, .label-rule .modal-input { width: 100%; box-sizing: border-box; margin: 0; }
 .label-preview { margin-top: 10px; word-spacing: 2px; }
 @media (max-width: 560px) { .label-rule { grid-template-columns: 1fr 1fr; } }
+.layer-list { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow-y: auto; margin: 8px 0; }
+.attach-list { list-style: none; margin: 8px 0; padding: 0; max-height: 50vh; overflow-y: auto; }
+.attach-list li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.attach-name { flex: 1; word-break: break-all; }
