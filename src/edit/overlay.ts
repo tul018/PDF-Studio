@@ -127,6 +127,8 @@ export class AnnotationOverlay implements Decorator {
   onRequestNoteText: (initial: string) => Promise<string | null> = async () => null;
   /** Crop tool: a rectangle (user space [x0, y0, x1, y1]) was dragged on a page. */
   onCrop: (pageId: string, rect: number[]) => void = () => {};
+  /** Switch tool through the app (keeps the toolbar in step); the overlay alone otherwise. */
+  onRequestTool: ((t: Tool) => void) | null = null;
   /** Zoom-to-area and snapshot tools: the dragged rectangle, same form. */
   onZoomArea: (pageId: string, rect: number[]) => void = () => {};
   onSnapshot: (pageId: string, rect: number[]) => void = () => {};
@@ -142,6 +144,11 @@ export class AnnotationOverlay implements Decorator {
 
   get state(): EditState {
     return this.history.state;
+  }
+
+  requestTool(t: Tool): void {
+    if (this.onRequestTool) this.onRequestTool(t);
+    else this.setTool(t);
   }
 
   setTool(t: Tool): void {
@@ -545,7 +552,7 @@ export class AnnotationOverlay implements Decorator {
         font: o.font,
       };
       this.history.replace(addAnnotation(s0, a)); // committed as one step on edit end
-      this.setTool("select");
+      this.requestTool("select");
       this.select(a.id);
       this.startTextEdit(slot, a.id, s0);
       return;
@@ -579,6 +586,7 @@ export class AnnotationOverlay implements Decorator {
     const fixedHl = tool === "highlight" && o.highlightMode === "fixed";
     // Shift: lines snap to 45° steps; boxes, circles and shapes are drawn square.
     let shift = e.shiftKey;
+    let dragged = false;
     const build = (): Annotation | null => {
       if (tool === "ink") return { id, pageId, type: "ink", points: pts.slice(), color: o.color, width: o.strokeWidth, opacity: o.lineOpacity };
       if (tool === "line" || tool === "arrow") {
@@ -631,6 +639,7 @@ export class AnnotationOverlay implements Decorator {
         }
         [cx, cy] = this.local(slot, ev);
         shift = ev.shiftKey;
+        if (!dragged && Math.hypot(cx - sx, cy - sy) >= 3) dragged = true;
       },
       () => {
         const cur = build();
@@ -638,6 +647,8 @@ export class AnnotationOverlay implements Decorator {
       },
       () => {
         this.history.replace(s0);
+        // A plain click on empty space (no drag): done drawing, back to Select.
+        if (!dragged && !fixedHl) return this.requestTool("select");
         const c = build();
         if (!c) return;
         if (c.type === "ink") {
@@ -707,10 +718,16 @@ export class AnnotationOverlay implements Decorator {
     };
     hit(e);
     let shown = 0;
+    let rubbed = false;
+    const [ex0, ey0] = this.local(slot, e);
     trackPointer(
       e,
       slot.layers,
-      (ev) => hit(ev),
+      (ev) => {
+        const [lx, ly] = this.local(slot, ev);
+        if (Math.hypot(lx - ex0, ly - ey0) >= 3) rubbed = true;
+        hit(ev);
+      },
       () => {
         if (gone.size === shown) return;
         shown = gone.size;
@@ -719,6 +736,7 @@ export class AnnotationOverlay implements Decorator {
       () => {
         this.history.replace(s0);
         if (gone.size) this.history.push(removeAnnotations(s0, gone));
+        else if (!rubbed) this.requestTool("select"); // a click on empty space: back to Select
       },
     );
   }
@@ -1021,7 +1039,7 @@ export class AnnotationOverlay implements Decorator {
     const box = boxFromView(v, cx - (w * v.scale) / 2, cy - (h * v.scale) / 2, cx + (w * v.scale) / 2, cy + (h * v.scale) / 2);
     const a: Annotation = { id: uid("a"), pageId: slot.ref.id, type: "image", box, imageId };
     this.history.push(addAnnotation(this.state, a));
-    this.setTool("select");
+    this.requestTool("select");
     this.select(a.id);
   }
 }

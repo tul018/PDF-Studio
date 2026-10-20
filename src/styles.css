@@ -783,3 +783,5 @@ body:not(.has-doc) .home, body.show-home .home { display: block; }
   body.has-doc .panes { padding-left: 52px; }
   .nav-pill { right: 8px; bottom: 8px; }
 }
+/* Select tool, press and hold: dragging the document. */
+body.panning, body.panning * { cursor: grabbing !important; user-select: none !important; -webkit-user-select: none !important; }

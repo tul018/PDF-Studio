@@ -75,3 +75,32 @@ test("Select: a click on empty space clears the selection", async ({ page }) => 
   await page.mouse.click(b.x - 30, b.y + 300); // grey area beside the page
   await expect(page.locator(".selection-box")).toHaveCount(0);
 });
+
+test("drawing tool: a plain click on empty space goes back to Select", async ({ page }) => {
+  await openPdf(page, "basic.pdf");
+  const b = await pageBox(page, 1);
+  await page.keyboard.press("r");
+  await page.mouse.move(b.x + 100, b.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(b.x + 250, b.y + 380, { steps: 4 });
+  await page.mouse.up();
+  await expect(page.locator('.quick-tools [data-tool="rect"]')).toHaveClass(/\bon\b/); // still drawing boxes
+  await page.mouse.click(b.x + 400, b.y + 600);
+  await expect(page.locator('.quick-tools [data-tool="select"]')).toHaveClass(/\bon\b/);
+  expect(await page.evaluate(() => document.body.dataset.activeTool)).toBe("select");
+});
+
+test("Select: press and hold, then move, drags the document", async ({ page }) => {
+  await openPdf(page, "basic.pdf");
+  const b = await pageBox(page, 1);
+  const scroller = page.locator(".pane.active .viewer");
+  const top0 = await scroller.evaluate((el) => el.scrollTop);
+  await page.mouse.move(b.x + 300, b.y + 500);
+  await page.mouse.down();
+  await page.waitForTimeout(350); // hold
+  await page.mouse.move(b.x + 300, b.y + 300, { steps: 8 });
+  await page.mouse.up();
+  const top1 = await scroller.evaluate((el) => el.scrollTop);
+  expect(top1 - top0).toBeGreaterThan(150);
+  expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
+});

@@ -316,6 +316,50 @@ export class App {
 
   // ================================================================ panes
 
+  /**
+   * Select tool: press and hold, then move, to drag the document (a quick
+   * drag still selects text). Around the pages, where there's no text, a
+   * drag pans right away.
+   */
+  private holdToPan(scroller: HTMLElement, e: PointerEvent): void {
+    if (e.pointerType !== "mouse") return; // touch scrolls by itself
+    const onPage = !!(e.target as Element).closest(".page");
+    const x0 = e.clientX,
+      y0 = e.clientY;
+    let panning = false,
+      lastX = x0,
+      lastY = y0;
+    const start = () => {
+      panning = true;
+      window.getSelection()?.removeAllRanges();
+      document.body.classList.add("panning");
+    };
+    const timer = onPage ? window.setTimeout(start, 250) : 0;
+    const move = (ev: PointerEvent) => {
+      if (!panning) {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
+        // Moved before the hold: a text selection (on a page) or a pan (around it).
+        if (onPage) return end();
+        start();
+      }
+      window.getSelection()?.removeAllRanges();
+      scroller.scrollLeft -= ev.clientX - lastX;
+      scroller.scrollTop -= ev.clientY - lastY;
+      lastX = ev.clientX;
+      lastY = ev.clientY;
+    };
+    const end = () => {
+      clearTimeout(timer);
+      document.body.classList.remove("panning");
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  }
+
   /** What a pane shows: its own pages, or the other PDF while comparing. */
   private paneViewer(p: Pane): Viewer {
     return p.compare?.shown ?? p.viewer;
@@ -369,6 +413,7 @@ export class App {
     this.bindSearchBar(pane);
 
     overlay.author = savedAuthor();
+    overlay.onRequestTool = (t) => this.setTool(t);
     overlay.onCrop = (pageId, rect) => void this.cropFromDrag(pageId, rect);
     overlay.onZoomArea = (pageId, rect) => {
       viewer.zoomToRect(this.history.state.pages.findIndex((p) => p.id === pageId), rect);
@@ -403,7 +448,8 @@ export class App {
       if (this.tool !== "select" || e.button !== 0) return;
       if ((e.target as Element).closest(".annot, .resize-handle, .text-editor, .form-field, .pdf-link")) return;
       for (const p of this.panes) p.overlay.select(null);
-    });
+      this.holdToPan(scroller, e);
+    }, { capture: true }); // before the page: a tool that switches to Select on this click isn't seen as Select
     root.addEventListener("focusin", () => this.activate(pane));
     const input = $<HTMLInputElement>(".page-input", head);
     // While comparing, the header drives the other PDF shown in this pane.
