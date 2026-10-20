@@ -197,6 +197,9 @@ select, .page-input, .modal-input, .searchbar input[type="search"] {
 /* on/off items (File › Auto-save): a check mark when on */
 .menu-item[aria-checked="true"] .menu-label::after { content: "  ✓"; color: var(--accent); font-weight: 700; }
 .menu-label { flex: 1; }
+.menu-icon { display: inline-flex; width: 18px; height: 18px; margin-right: -6px; color: var(--muted); flex: none; }
+.menu-icon svg { width: 18px; height: 18px; }
+.menu-item:hover .menu-icon { color: var(--accent); }
 .menu-keys { color: var(--muted); font-size: 12px; }
 .menu-item.has-sub::after { content: "›"; color: var(--muted); }
 .menu-sep { height: 1px; background: var(--border); margin: 4px 6px; }

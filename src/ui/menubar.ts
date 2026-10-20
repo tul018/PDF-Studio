@@ -18,6 +18,8 @@ export type MenuItem =
       sub?: MenuItem[];
       /** Filled when the submenu opens (e.g. recent files). */
       dynamic?: string;
+      /** Icon name (src/ui/icons.ts), shown before the label. */
+      icon?: string;
     };
 
 export interface Menu {
@@ -183,6 +185,12 @@ function itemEl(it: MenuItem, dyn: (name: string) => MenuItem[]): HTMLElement {
   const b = document.createElement("button");
   b.className = "menu-item";
   b.setAttribute("role", "menuitem");
+  if (it.icon) {
+    const ic = document.createElement("span");
+    ic.className = "menu-icon";
+    ic.innerHTML = icon(it.icon);
+    b.appendChild(ic);
+  }
   const label = document.createElement("span");
   label.className = "menu-label";
   label.textContent = it.label;
@@ -226,6 +234,9 @@ function itemEl(it: MenuItem, dyn: (name: string) => MenuItem[]): HTMLElement {
   return b;
 }
 
+/** Icons for the entries of the Menu button. */
+const MENU_ICONS: Record<string, string> = { File: "folder", Edit: "pencilDoc", View: "eye", Tools: "wrench", Settings: "gear", Help: "help" };
+
 /** Build the menu bar into `host`; `dynamic` supplies changing submenus (recent files). */
 export function buildMenuBar(host: HTMLElement, dynamic: (name: string) => MenuItem[]): void {
   const bar = document.createElement("nav");
@@ -239,7 +250,7 @@ export function buildMenuBar(host: HTMLElement, dynamic: (name: string) => MenuI
   // Like Acrobat: one Menu button; File, Edit, View... open from it.
   const root: Menu = {
     label: "Menu",
-    items: MENUS.map((m): MenuItem => (m.run ? { label: m.label, run: m.run } : { label: m.label, sub: m.items! })),
+    items: MENUS.map((m): MenuItem => (m.run ? { label: m.label, run: m.run, icon: MENU_ICONS[m.label] } : { label: m.label, sub: m.items!, icon: MENU_ICONS[m.label] })),
   };
   for (const m of [root]) {
     const wrap = document.createElement("div");
