@@ -69,3 +69,25 @@ test("cloud shape and eraser", async ({ page }) => {
   await page.keyboard.press("Control+z");
   expect((await stats(page)).annotations).toBe(3);
 });
+
+test("Comment tool: one click on a comment opens nothing; double-click edits it with its text", async ({ page }) => {
+  await openPdf(page, "basic.pdf");
+  const b = await pageBox(page, 1);
+  await page.keyboard.press("n");
+  await page.mouse.click(b.x + 200, b.y + 200);
+  await page.locator(".modal-input").fill("Original text");
+  await page.locator(".modal .btn.primary").click();
+  await expect(page.locator(".annot.note")).toHaveCount(1);
+  const r = (await page.locator(".annot.note").boundingBox())!;
+  const cx = r.x + r.width / 2,
+    cy = r.y + r.height / 3;
+  await page.mouse.click(cx, cy);
+  await expect(page.locator(".modal")).toHaveCount(0);
+  await page.mouse.dblclick(cx, cy);
+  await expect(page.locator(".modal-input")).toHaveValue("Original text");
+  await page.locator(".modal-input").fill("Changed");
+  await page.locator(".modal .btn.primary").click();
+  await expect(page.locator(".annot.note")).toHaveCount(1);
+  await page.mouse.move(cx, cy + 1);
+  await expect(page.locator(".note-pop")).toContainText("Changed");
+});

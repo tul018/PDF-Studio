@@ -557,6 +557,8 @@ export class AnnotationOverlay implements Decorator {
     if (tool === "snapshot") return this.dragFrame(slot, e, (r) => this.onSnapshot(slot.ref.id, r));
 
     if (tool === "note") {
+      // On an existing comment: no new one (double-click opens it to edit).
+      if (target.closest(".annot.note")) return;
       const [x, y] = v.toPdf(sx, sy);
       void this.onRequestNoteText("").then((text) => {
         if (!text) return;
