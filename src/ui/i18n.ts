@@ -13,6 +13,7 @@ type Dict = Record<string, string>;
 type Templates = [string, string][];
 
 const TH: Dict = {
+  "Auto-save": "บันทึกอัตโนมัติ", "Auto-saving…": "กำลังบันทึกอัตโนมัติ…", "Auto-save is off.": "ปิดการบันทึกอัตโนมัติแล้ว", "Auto-save is on: changes are saved to the file 30 seconds after your last edit. Each save clears Undo.": "เปิดบันทึกอัตโนมัติแล้ว: บันทึกลงไฟล์ 30 วินาทีหลังแก้ไขล่าสุด แต่ละครั้งจะล้างประวัติเลิกทำ", "Auto-save is on, but only works in the PC app with files opened from this PC.": "เปิดบันทึกอัตโนมัติแล้ว แต่ใช้ได้เฉพาะในแอปบน PC กับไฟล์ที่เปิดจากเครื่องนี้",
   "Form data (CSV / JSON)…": "ข้อมูลฟอร์ม (CSV / JSON)…", "Form data (CSV)…": "ข้อมูลฟอร์ม (CSV)…", "This document has no form fields.": "เอกสารนี้ไม่มีช่องกรอกฟอร์ม", "None of the names in the file match this form's fields.": "ไม่มีชื่อในไฟล์ที่ตรงกับช่องของฟอร์มนี้", "The file needs field names in the first row and values in the second.": "ไฟล์ต้องมีชื่อช่องในแถวแรก และค่าในแถวที่สอง",
   "Zoom to area": "ซูมเฉพาะส่วน", "Layers…": "เลเยอร์…", "Layers": "เลเยอร์", "Attachments…": "ไฟล์แนบ…", "Attachments": "ไฟล์แนบ", "Snapshot (copy an area as a picture)": "จับภาพ (คัดลอกบางส่วนเป็นรูป)", "Drag a frame around the part to zoom in on.": "ลากกรอบรอบส่วนที่ต้องการซูม", "Drag a frame around the part to copy as a picture.": "ลากกรอบรอบส่วนที่ต้องการคัดลอกเป็นรูป", "Picture copied. Paste it into LINE, Word or an email (Ctrl+V).": "คัดลอกรูปแล้ว วางใน LINE, Word หรืออีเมลได้ (Ctrl+V)", "Saved the picture as snapshot.png": "บันทึกรูปเป็น snapshot.png แล้ว", "Show or hide parts of the document. Only the view changes, not the file.": "แสดงหรือซ่อนบางส่วนของเอกสาร เปลี่ยนแค่การแสดงผล ไม่เปลี่ยนไฟล์", "This document has no layers.": "เอกสารนี้ไม่มีเลเยอร์", "This document has no attached files.": "เอกสารนี้ไม่มีไฟล์แนบ", "(unnamed layer)": "(เลเยอร์ไม่มีชื่อ)", "Save…": "บันทึก…",
   "Page labels…": "เลขหน้าแบบกำหนดเอง…", "Page labels": "เลขหน้าแบบกำหนดเอง", "Number pages your way, e.g. i, ii, iii for the front pages, then 1, 2, 3.": "กำหนดเลขหน้าเอง เช่น i, ii, iii สำหรับหน้าแรก ๆ แล้วต่อด้วย 1, 2, 3", "From page": "ตั้งแต่หน้า", "Style": "รูปแบบ", "Prefix": "คำนำหน้า", "Start at": "เริ่มที่", "No number (prefix only)": "ไม่มีตัวเลข (คำนำหน้าอย่างเดียว)", "Remove this numbering": "ลบการกำหนดเลขนี้", "Plain numbers": "เลขหน้าปกติ", "Plain page numbers (1, 2, 3…).": "เลขหน้าปกติ (1, 2, 3…)", "Apply": "ใช้",
@@ -103,6 +104,7 @@ const TH: Dict = {
 };
 
 const ZH: Dict = {
+  "Auto-save": "自动保存", "Auto-saving…": "正在自动保存…", "Auto-save is off.": "已关闭自动保存。", "Auto-save is on: changes are saved to the file 30 seconds after your last edit. Each save clears Undo.": "已开启自动保存：最后一次编辑 30 秒后保存到文件。每次保存会清除撤销记录。", "Auto-save is on, but only works in the PC app with files opened from this PC.": "已开启自动保存，但仅在电脑版中对本机打开的文件有效。",
   "Form data (CSV / JSON)…": "表单数据（CSV / JSON）…", "Form data (CSV)…": "表单数据（CSV）…", "This document has no form fields.": "此文档没有表单字段。", "None of the names in the file match this form's fields.": "文件中的名称与此表单的字段都不匹配。", "The file needs field names in the first row and values in the second.": "文件第一行应为字段名，第二行为值。",
   "Zoom to area": "缩放到区域", "Layers…": "图层…", "Layers": "图层", "Attachments…": "附件…", "Attachments": "附件", "Snapshot (copy an area as a picture)": "快照（将区域复制为图片）", "Drag a frame around the part to zoom in on.": "拖出一个框，框住要放大的部分。", "Drag a frame around the part to copy as a picture.": "拖出一个框，框住要复制为图片的部分。", "Picture copied. Paste it into LINE, Word or an email (Ctrl+V).": "图片已复制。可粘贴到 LINE、Word 或邮件中 (Ctrl+V)。", "Saved the picture as snapshot.png": "图片已保存为 snapshot.png", "Show or hide parts of the document. Only the view changes, not the file.": "显示或隐藏文档的部分内容。只改变显示，不改变文件。", "This document has no layers.": "此文档没有图层。", "This document has no attached files.": "此文档没有附件。", "(unnamed layer)": "（未命名图层）", "Save…": "保存…",
   "Page labels…": "页码标签…", "Page labels": "页码标签", "Number pages your way, e.g. i, ii, iii for the front pages, then 1, 2, 3.": "自定义页码，例如前几页用 i、ii、iii，之后用 1、2、3。", "From page": "从第几页", "Style": "样式", "Prefix": "前缀", "Start at": "起始于", "No number (prefix only)": "无数字（仅前缀）", "Remove this numbering": "删除此编号", "Plain numbers": "普通页码", "Plain page numbers (1, 2, 3…).": "普通页码（1、2、3…）。", "Apply": "应用",
@@ -186,6 +188,7 @@ const TEMPLATES: Record<Exclude<Lang, "en">, Templates> = {
     ["Copied {n} page{s}. Paste with Ctrl+V after the page you choose.", "คัดลอก {n} หน้าแล้ว วางด้วย Ctrl+V หลังหน้าที่เลือก"],
     ["Cut {n} page{s}. Paste with Ctrl+V after the page you choose.", "ตัด {n} หน้าแล้ว วางด้วย Ctrl+V หลังหน้าที่เลือก"],
     ["Pasted {n} page{s}.", "วาง {n} หน้าแล้ว"],
+    ["Auto-saved {s}", "บันทึกอัตโนมัติ {s} แล้ว"],
     ["Filled {n} field{s} from {s}.", "กรอก {n} ช่องจาก {s} แล้ว"],
     ["Saved {n} fields to {s}", "บันทึก {n} ช่องลงใน {s} แล้ว"],
     ["+ Numbering from page {n}", "+ กำหนดเลขตั้งแต่หน้า {n}"],
@@ -207,6 +210,7 @@ const TEMPLATES: Record<Exclude<Lang, "en">, Templates> = {
     ["Copied {n} page{s}. Paste with Ctrl+V after the page you choose.", "已复制 {n} 页。在选定页面后按 Ctrl+V 粘贴。"],
     ["Cut {n} page{s}. Paste with Ctrl+V after the page you choose.", "已剪切 {n} 页。在选定页面后按 Ctrl+V 粘贴。"],
     ["Pasted {n} page{s}.", "已粘贴 {n} 页。"],
+    ["Auto-saved {s}", "已自动保存 {s}"],
     ["Filled {n} field{s} from {s}.", "已从 {s} 填写 {n} 个字段。"],
     ["Saved {n} fields to {s}", "已将 {n} 个字段保存到 {s}"],
     ["+ Numbering from page {n}", "+ 从第 {n} 页开始编号"],

@@ -177,6 +177,9 @@ select, .page-input, .modal-input, .searchbar input[type="search"] {
 .menu-item { display: flex; align-items: center; gap: 16px; width: 100%; border: 0; background: none; text-align: left; padding: 7px 10px; border-radius: 5px; cursor: pointer; color: inherit; font-size: 13.5px; white-space: nowrap; }
 .menu-item:hover:not(:disabled), .menu-subwrap.open > .menu-item { background: var(--surface-2); }
 .menu-item:disabled { opacity: 0.45; cursor: default; }
+/* on/off items (File › Auto-save): a check mark when on */
+.menu-item[aria-checked] .menu-label::before { content: ""; display: inline-block; width: 1.2em; }
+.menu-item[aria-checked="true"] .menu-label::before { content: "✓"; }
 .menu-label { flex: 1; }
 .menu-keys { color: var(--muted); font-size: 12px; }
 .menu-item.has-sub::after { content: "›"; color: var(--muted); }
@@ -233,8 +236,9 @@ body.has-tabs .tabbar { display: flex; }
 body.sidebar-hidden #sidebar, body:not(.has-doc):not(.folder-open) #sidebar { display: none; }
 /* Without a document only the Folder tab makes sense. */
 body:not(.has-doc) .tabs button:not([data-tab="folder"]) { display: none; }
-.tabs { display: flex; border-bottom: 1px solid var(--border); }
-.tabs button { flex: 1; border: 0; background: none; padding: 9px 0; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; }
+/* Five tabs don't fit in the narrow sidebar (Thai names even less): they wrap to a second row. */
+.tabs { display: flex; flex-wrap: wrap; column-gap: 2px; border-bottom: 1px solid var(--border); }
+.tabs button { flex: 1 1 auto; min-width: 0; white-space: nowrap; border: 0; background: none; padding: 8px 6px; font-size: 13px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; }
 .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
 .panel { flex: 1; min-height: 0; overflow: auto; }
 .pages-panel { display: flex; flex-direction: column; overflow: hidden; }

@@ -157,12 +157,17 @@ export class App {
   private ribbons = new MarkRibbons(this);
   private lastPages: readonly PageRef[] | null = null;
   private draftTimer = 0;
+  /** File › Auto-save: save to the same file 30 s after the last edit. */
+  private autosave = localStorage.getItem("pdfstudio:autosave") === "1";
+  private autosaveTimer = 0;
+  private saving = false;
   private viewSaveTimer = 0;
   private tool: Tool = "select";
   private toolOpts?: ToolOptionsUI;
 
   constructor() {
     buildMenuBar($(".main-bar"), (name) => (name === "recent" ? this.recentMenu() : []));
+    this.syncAutosaveItem();
     this.renderIcons();
     this.panes.push(this.createPane());
     this.panes[0].root.classList.add("active");
@@ -822,6 +827,7 @@ export class App {
       this.lastLabels = s.pageLabels;
       this.thumbs.refreshLabels();
     }
+    this.scheduleAutosave();
     if (this.history.dirty && this.mainDoc) {
       clearTimeout(this.draftTimer);
       this.draftTimer = window.setTimeout(() => this.writeDraftNow(), 3000);
@@ -838,7 +844,60 @@ export class App {
   // ================================================================ save
 
   /** Returns true when saved. */
-  async save(asNew: boolean, protect?: Protection): Promise<boolean> {
+  /** Turn File › Auto-save on or off (remembered). */
+  private toggleAutosave(): void {
+    this.autosave = !this.autosave;
+    try {
+      localStorage.setItem("pdfstudio:autosave", this.autosave ? "1" : "0");
+    } catch {
+      /* private mode */
+    }
+    this.syncAutosaveItem();
+    if (!this.autosave) return void toast("Auto-save is off.", "info");
+    toast(
+      this.platform.kind === "desktop"
+        ? "Auto-save is on: changes are saved to the file 30 seconds after your last edit. Each save clears Undo."
+        : "Auto-save is on, but only works in the PC app with files opened from this PC.",
+      "info",
+      7000,
+    );
+    this.scheduleAutosave();
+  }
+
+  private syncAutosaveItem(): void {
+    document.querySelectorAll('.menubar [data-action="autosave"]').forEach((el) => el.setAttribute("aria-checked", String(this.autosave)));
+  }
+
+  /** Auto-save waits until 30 s pass with no edit, no dialog and no text being typed. */
+  private scheduleAutosave(): void {
+    clearTimeout(this.autosaveTimer);
+    if (!this.autosave || !this.history.dirty || !this.canAutosave()) return;
+    this.autosaveTimer = window.setTimeout(() => {
+      const busy = document.querySelector(".modal-backdrop, .palette-backdrop, textarea.text-editor") || this.saving;
+      if (busy || !this.history.dirty) return this.scheduleAutosave();
+      void this.save(false, undefined, true);
+    }, 30_000);
+  }
+
+  /** Only a file opened from this PC can be saved without asking (not a protected one). */
+  private canAutosave(): boolean {
+    const d = this.mainDoc;
+    if (!d || this.platform.kind !== "desktop" || !d.source.path) return false;
+    return !this.history.state.pages.some((p) => p.docId && this.store.docs.get(p.docId)?.encrypted);
+  }
+
+  async save(asNew: boolean, protect?: Protection, auto = false): Promise<boolean> {
+    if (!this.mainDoc || this.saving) return false;
+    if (auto && !this.canAutosave()) return false;
+    this.saving = true;
+    try {
+      return await this.saveNow(asNew, protect, auto);
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  private async saveNow(asNew: boolean, protect: Protection | undefined, auto: boolean): Promise<boolean> {
     if (!this.mainDoc) return false;
     for (const p of this.panes) p.overlay.commitTextEdit();
     const usedDocs = [...new Set(this.history.state.pages.map((p) => p.docId))];
@@ -865,6 +924,7 @@ export class App {
       .reduce((a, b) => a + b, 0);
     const limit = (this.profile.isIOS ? 350 : 1500) * 1024 * 1024;
     if (totalBytes > limit) {
+      if (auto) return false;
       const ok = await confirmDialog(
         "Very large file",
         `Saving needs to load the full ${(totalBytes / 1048576).toFixed(0)} MB into memory, which may fail on this device. Continue?`,
@@ -872,10 +932,11 @@ export class App {
       );
       if (!ok) return false;
     }
-    const busy = progressOverlay("Preparing…");
+    // A screen over the app while saving: an edit made now would be lost when the file reopens.
+    const busy = progressOverlay(auto ? "Auto-saving…" : "Preparing…");
     try {
       const bytes = await buildPdf(this.history.state, this.store, this.images, {
-        onProgress: (l, f) => busy.update(l, f),
+        onProgress: (l, f) => busy.update(auto ? "Auto-saving…" : l, f),
         protect,
       });
       busy.close();
@@ -902,7 +963,8 @@ export class App {
       } else {
         this.history.markSaved();
       }
-      toast(`Saved ${res.name}${this.platform.kind === "ios" ? " to Files › On My iPhone/iPad › PDF Studio" : ""}`, "ok", 4500);
+      if (auto) toast(`Auto-saved ${res.name}`, "ok", 2500);
+      else toast(`Saved ${res.name}${this.platform.kind === "ios" ? " to Files › On My iPhone/iPad › PDF Studio" : ""}`, "ok", 4500);
       return true;
     } catch (e) {
       busy.close();
@@ -1956,6 +2018,8 @@ export class App {
         return void this.save(true);
       case "print":
         return void this.print();
+      case "autosave":
+        return this.toggleAutosave();
       case "revert":
         return void this.revert();
       case "palette":
