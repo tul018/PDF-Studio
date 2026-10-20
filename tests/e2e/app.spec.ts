@@ -123,7 +123,8 @@ test("true redaction removes text under the box", async ({ page }) => {
   await expect(hit).toBeAttached();
   const hb = (await hit.boundingBox())!;
   await page.keyboard.press("Escape");
-  await page.locator('[data-tool="redact"]').click();
+  await page.locator('[data-mode="protect"]').click();
+  await page.locator('.toolpanel [data-tool="redact"]').click();
   await page.mouse.move(hb.x - 10, hb.y - 10);
   await page.mouse.down();
   await page.mouse.move(hb.x + hb.width * 4, hb.y + hb.height + 10, { steps: 4 });

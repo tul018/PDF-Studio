@@ -5,7 +5,7 @@ test("tabs: two files open, edits kept when switching, close a tab", async ({ pa
   page.on("pageerror", (e) => console.log("PAGE ERROR:", e.message));
   await page.goto("/");
   await openPdf(page, "basic.pdf");
-  await page.locator('.tool-bar [data-action="pageNumbers"]').click();
+  await cmd(page, '[data-action="pageNumbers"]');
   await page.getByRole("button", { name: "Add page numbers" }).click();
   await page.fill("#page-input", "7");
   await page.press("#page-input", "Enter");
@@ -34,7 +34,7 @@ test("a single file has a close button; closing it goes back to the start screen
   await page.locator(".tab .tab-close").click();
   await expect(page.locator("body.has-doc")).toHaveCount(0);
   await expect(page.locator(".tab")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Open PDF…" })).toBeVisible();
+  await expect(page.locator('.home [data-action="open"]')).toBeVisible();
   // ...and a fresh start: opening again works.
   await openPdf(page, "form.pdf");
   await expect(page.locator(".tab")).toHaveCount(1);

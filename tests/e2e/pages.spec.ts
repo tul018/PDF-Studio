@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { PDFDict, PDFDocument, PDFName, type PDFString } from "pdf-lib";
-import { fixture, openPdf } from "./helpers";
+import { cmd, fixture, openPdf } from "./helpers";
 import { pageTexts } from "./pdftext";
 
 /** Extract / split by ranges, export by range, merge PDFs, move pages to a typed position. */
@@ -52,9 +52,8 @@ test("export images for a typed page range; bad ranges are explained", async ({ 
 });
 
 test("merge PDFs: choose order, one new PDF opens", async ({ page }) => {
-  await page.locator('.menubar .menu-top[data-menu="File"]').click();
   const chooser = page.waitForEvent("filechooser");
-  await page.locator('.menubar [data-action="mergeFiles"]').click();
+  await cmd(page, '[data-action="mergeFiles"]');
   await (await chooser).setFiles([fixture("basic.pdf"), fixture("form.pdf")]);
   const modal = page.locator(".modal");
   await expect(modal.locator(".merge-list li")).toHaveCount(2);

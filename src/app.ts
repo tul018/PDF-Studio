@@ -44,6 +44,7 @@ import { BytesSource } from "./core/source";
 import { currentLanguage, initialLanguage, setLanguage } from "./ui/i18n";
 import { buildMenuBar, type MenuItem } from "./ui/menubar";
 import { openPalette } from "./ui/palette";
+import { ToolPanel } from "./ui/toolPanel";
 import { attachmentsDialog, layersDialog } from "./ui/docExtras";
 import { calculate, type FormScripts } from "./forms/calc";
 import { readFormScripts } from "./forms/scripts";
@@ -132,6 +133,7 @@ export class App {
   private canvasChangePending = false;
   private folderPanel!: FolderPanel;
   private comments!: CommentsPanel;
+  private toolPanel!: ToolPanel;
   /** Pages copied or cut with Ctrl+C / Ctrl+X, with their annotations. */
   private lastLabels: EditState["pageLabels"];
   /** View › Layers: visibility per document, once changed. */
@@ -169,6 +171,7 @@ export class App {
 
   constructor() {
     buildMenuBar($(".main-bar"), (name) => (name === "recent" ? this.recentMenu() : []));
+    this.toolPanel = new ToolPanel($("#toolpanel"));
     this.syncAutosaveItem();
     this.renderIcons();
     this.panes.push(this.createPane());
@@ -236,7 +239,10 @@ export class App {
     setLanguage(initialLanguage());
     this.reader.rate = Number(localStorage.getItem("pdfstudio:readrate")) || 1;
     this.tabBar = new TabBar($("#tabbar"));
-    this.tabBar.onSelect = (i) => void this.switchTab(i);
+    this.tabBar.onSelect = (i) => {
+      document.body.classList.remove("show-home");
+      void this.switchTab(i);
+    };
     this.tabBar.onClose = (i) => void this.closeTab(i);
     this.tabBar.onNew = () => void this.open();
     this.folderPanel = new FolderPanel($('[data-panel="folder"]'), this.platform);
@@ -337,7 +343,7 @@ export class App {
       </select>
       <button class="icon-btn" data-pane-act="zoomIn" title="Zoom in">${icon("zoomIn")}</button>
       <button class="icon-btn" data-pane-act="fit" title="Fit width">${icon("fitWidth")}</button>
-      <button class="btn small pane-other" data-pane-act="other" title="Show another PDF in this pane, to compare side by side">Open other PDF…</button>
+      <button class="icon-btn pane-other" data-pane-act="other" title="Open other PDF… (show another PDF in this pane, to compare side by side)" aria-label="Open other PDF…">${icon("open")}</button>
       <button class="icon-btn pane-close" data-pane-act="close" title="Close this pane">${icon("close")}</button>`;
     const scroller = document.createElement("div");
     scroller.className = "viewer";
@@ -510,6 +516,7 @@ export class App {
 
   private async openSourcesNow(sources: PdfSource[], mode: "replace" | "merge" = "replace"): Promise<void> {
     if (!sources.length) return;
+    document.body.classList.remove("show-home");
     if (mode === "replace") {
       const key = fileKeyOf(sources[0]);
       const already = this.tabs.findIndex((t) => t.sources[0] && fileKeyOf(t.sources[0]) === key);
@@ -2025,7 +2032,7 @@ export class App {
       const el = (e.target as Element).closest<HTMLElement>("[data-action],[data-tool],[data-page-op],[data-pro],[data-view]");
       if (!el || (el as HTMLButtonElement).disabled) return;
       // Menu items only: the professional tools panel runs its own buttons.
-      if (el.dataset.pro) return void (el.closest(".menubar") && this.workbench.run(el.dataset.pro));
+      if (el.dataset.pro) return void (el.closest(".menubar, .toolpanel") && this.workbench.run(el.dataset.pro));
       if (el.dataset.view) {
         const sel = $<HTMLSelectElement>("#view-mode");
         sel.value = el.dataset.view;
@@ -2185,8 +2192,13 @@ export class App {
         return this.applyTheme(dark ? "light" : "dark");
       }
       case "tools":
-        document.body.classList.toggle("tools-open");
-        return;
+        return this.toolPanel.toggle();
+      case "home":
+        // Home over the open document; a file tab brings the document back.
+        if (this.mainDoc) document.body.classList.toggle("show-home");
+        return this.updateChrome();
+      case "commentsList":
+        return this.showSidebarTab("comments");
     }
   }
 
@@ -2211,12 +2223,22 @@ export class App {
       document.body.classList.add("sidebar-hidden");
     }
     document.querySelectorAll<HTMLElement>("[data-tab]").forEach((b) =>
-      b.addEventListener("click", () => this.showSidebarTab(b.dataset.tab!)),
+      b.addEventListener("click", () => {
+        // Like Acrobat's right rail: the open panel's icon closes it again.
+        const open = b.classList.contains("on") && !document.body.classList.contains("sidebar-hidden");
+        if (open) {
+          document.body.classList.add("sidebar-hidden");
+          localStorage.setItem("pdfstudio:sidebar", "0");
+        } else this.showSidebarTab(b.dataset.tab!);
+      }),
     );
   }
 
   private showSidebarTab(tab: string): void {
     document.body.classList.remove("sidebar-hidden");
+    localStorage.setItem("pdfstudio:sidebar", "1");
+    const btn = document.querySelector<HTMLElement>(`.rail [data-tab="${tab}"]`);
+    $("#sidebar-title").textContent = btn?.querySelector("span")?.textContent ?? "";
     document.body.classList.toggle("folder-open", tab === "folder");
     if (tab === "folder") void this.folderPanel.show();
     if (tab === "comments") this.comments.render();
@@ -2379,8 +2401,10 @@ export class App {
   private updateChrome(): void {
     const has = !!this.mainDoc;
     document.body.classList.toggle("has-doc", has);
+    if (!has) document.body.classList.remove("show-home");
+    document.querySelector(".home-btn")?.classList.toggle("on", !has || document.body.classList.contains("show-home"));
+    if (document.body.classList.contains("show-home") || !has) this.renderRecent();
     this.renderTabs();
-    if (!has) this.renderRecent();
     $<HTMLButtonElement>('[data-action="undo"]').disabled = !this.history.canUndo;
     $<HTMLButtonElement>('[data-action="redo"]').disabled = !this.history.canRedo;
     document.querySelectorAll<HTMLButtonElement>("[data-needs-doc]").forEach((b) => (b.disabled = !has));

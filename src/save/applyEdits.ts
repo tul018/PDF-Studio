@@ -432,7 +432,7 @@ async function drawAnnotation(
         page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness: a.width, color, lineCap: LineCapStyle.Round });
       line(a.x1, a.y1, a.x2, a.y2);
       const [hs, he] = headsOf(a);
-      for (const part of [headPart(hs, a.x2, a.y2, a.x1, a.y1, a.width), headPart(he, a.x1, a.y1, a.x2, a.y2, a.width)]) {
+      for (const part of [headPart(hs, a.x2, a.y2, a.x1, a.y1, a.width, a.headSize), headPart(he, a.x1, a.y1, a.x2, a.y2, a.width, a.headSize)]) {
         if (!part) continue;
         if (part.kind === "circle") page.drawCircle({ x: part.cx, y: part.cy, size: part.r, color });
         else if (part.kind === "fill") {

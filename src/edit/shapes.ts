@@ -59,11 +59,11 @@ export type HeadPart =
   | { kind: "bar"; points: number[][] };
 
 /** The head at (tx, ty), pointing away from (fx, fy). */
-export function headPart(style: HeadStyle, fx: number, fy: number, tx: number, ty: number, width: number): HeadPart | null {
+export function headPart(style: HeadStyle, fx: number, fy: number, tx: number, ty: number, width: number, size = 1): HeadPart | null {
   if (style === "none") return null;
   const ang = Math.atan2(ty - fy, tx - fx);
-  const len = Math.max(8, width * 4);
-  if (style === "circle") return { kind: "circle", cx: tx, cy: ty, r: Math.max(3, width * 1.8) };
+  const len = Math.max(8, width * 4) * size;
+  if (style === "circle") return { kind: "circle", cx: tx, cy: ty, r: Math.max(3, width * 1.8) * size };
   if (style === "bar") {
     const s = len * 0.6;
     const nx = -Math.sin(ang) * s,

@@ -5,6 +5,8 @@
  * single click handler runs them and data-needs-doc disables them with no
  * document open. Menus open on click, then follow the mouse; Esc closes.
  */
+import { icon } from "./icons";
+
 export type MenuItem =
   | "-"
   | {
@@ -198,6 +200,7 @@ function itemEl(it: MenuItem, dyn: (name: string) => MenuItem[]): HTMLElement {
     b.appendChild(k);
   }
   if (it.sub) {
+    b.dataset.menu = it.label; // File, Edit, View... (English name)
     b.classList.add("has-sub");
     b.setAttribute("aria-haspopup", "true");
     const list = document.createElement("div");
@@ -233,12 +236,17 @@ export function buildMenuBar(host: HTMLElement, dynamic: (name: string) => MenuI
     openMenu?.classList.remove("open");
     openMenu = null;
   };
-  for (const m of MENUS) {
+  // Like Acrobat: one Menu button; File, Edit, View... open from it.
+  const root: Menu = {
+    label: "Menu",
+    items: MENUS.map((m): MenuItem => (m.run ? { label: m.label, run: m.run } : { label: m.label, sub: m.items! })),
+  };
+  for (const m of [root]) {
     const wrap = document.createElement("div");
     wrap.className = "menu";
     const top = document.createElement("button");
     top.className = "menu-top";
-    top.textContent = m.label;
+    top.innerHTML = `${icon("menu")}<span>${m.label}</span>`;
     top.dataset.menu = m.label;
     wrap.appendChild(top);
     if (m.run) {

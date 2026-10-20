@@ -66,6 +66,7 @@ export interface ToolOptions {
   /** Arrow tool: heads at the start and the end. */
   arrowStart: HeadStyle;
   arrowEnd: HeadStyle;
+  arrowSize: number;
 }
 
 export function defaultToolOptions(): ToolOptions {
@@ -84,6 +85,7 @@ export function defaultToolOptions(): ToolOptions {
     fillOpacity: 0.3,
     arrowStart: "none",
     arrowEnd: "open",
+    arrowSize: 1,
   };
 }
 
@@ -172,7 +174,7 @@ export class AnnotationOverlay implements Decorator {
 
   /** Recolor / restyle the selected annotation. */
   styleSelected(
-    patch: Partial<{ color: string; strokeWidth: number; fontSize: number; font: TextFont; opacity: number; shape: ShapeSpec; fillColor: string; fillOpacity: number; arrowStart: HeadStyle; arrowEnd: HeadStyle }>,
+    patch: Partial<{ color: string; strokeWidth: number; fontSize: number; font: TextFont; opacity: number; shape: ShapeSpec; fillColor: string; fillOpacity: number; arrowStart: HeadStyle; arrowEnd: HeadStyle; arrowSize: number }>,
   ): void {
     const a = this.selected;
     if (!a) return;
@@ -187,6 +189,7 @@ export class AnnotationOverlay implements Decorator {
     }
     if ((a.type === "arrow" || a.type === "line") && patch.arrowStart) p.start = patch.arrowStart;
     if ((a.type === "arrow" || a.type === "line") && patch.arrowEnd) p.end = patch.arrowEnd;
+    if ((a.type === "arrow" || a.type === "line") && patch.arrowSize) p.headSize = patch.arrowSize;
     if (patch.color && "color" in a && a.color !== patch.color) p.color = patch.color;
     if (patch.strokeWidth !== undefined && "strokeWidth" in a && a.type !== "highlight" && a.strokeWidth !== patch.strokeWidth && (patch.strokeWidth > 0 || fillable))
       p.strokeWidth = patch.strokeWidth;
@@ -276,7 +279,15 @@ export class AnnotationOverlay implements Decorator {
           "stroke-width": 1.5 / slot.view.scale,
         }),
       );
-      if ("box" in sel) {
+      if (sel.type === "line" || sel.type === "arrow") {
+        // A handle on each end: drag to lengthen, shorten or turn it.
+        for (const [end, x, y] of [["1", sel.x1, sel.y1], ["2", sel.x2, sel.y2]] as const) {
+          const h = svg("circle", { class: "resize-handle end-handle", cx: x, cy: y, r: 6 / slot.view.scale, "stroke-width": 1.5 / slot.view.scale });
+          h.dataset.handle = sel.id;
+          h.dataset.end = end;
+          root.appendChild(h);
+        }
+      } else if ("box" in sel) {
         const [hx, hy] = boxCorner(sel.box, sel.box.w, sel.box.h);
         const handle = svg("circle", {
           class: "resize-handle",
@@ -373,7 +384,7 @@ export class AnnotationOverlay implements Decorator {
         const g = svg("g", { stroke: a.color, "stroke-width": a.width, "stroke-linecap": "round", fill: "none" });
         g.appendChild(svg("line", { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2 }));
         const [hs, he] = headsOf(a);
-        for (const part of [headPart(hs, a.x2, a.y2, a.x1, a.y1, a.width), headPart(he, a.x1, a.y1, a.x2, a.y2, a.width)]) {
+        for (const part of [headPart(hs, a.x2, a.y2, a.x1, a.y1, a.width, a.headSize), headPart(he, a.x1, a.y1, a.x2, a.y2, a.width, a.headSize)]) {
           if (!part) continue;
           if (part.kind === "circle") g.appendChild(svg("circle", { cx: part.cx, cy: part.cy, r: part.r, fill: a.color }));
           else {
@@ -485,7 +496,8 @@ export class AnnotationOverlay implements Decorator {
       const handleId = (target as SVGElement).dataset?.handle;
       if (handleId) {
         e.preventDefault();
-        return this.dragResize(slot, e, handleId);
+        const end = (target as SVGElement).dataset.end;
+        return end ? this.dragEnd(slot, e, handleId, end === "1" ? 1 : 2) : this.dragResize(slot, e, handleId);
       }
       const id = target.closest<SVGElement>(".annot")?.dataset.id;
       if (id) {
@@ -551,12 +563,14 @@ export class AnnotationOverlay implements Decorator {
       pts.push(px, py);
     }
     const fixedHl = tool === "highlight" && o.highlightMode === "fixed";
+    // Shift: lines snap to 45° steps; boxes, circles and shapes are drawn square.
+    let shift = e.shiftKey;
     const build = (): Annotation | null => {
       if (tool === "ink") return { id, pageId, type: "ink", points: pts.slice(), color: o.color, width: o.strokeWidth, opacity: 1 };
       if (tool === "line" || tool === "arrow") {
         const [x1, y1] = v.toPdf(sx, sy);
-        const [x2, y2] = v.toPdf(cx, cy);
-        const heads = tool === "arrow" ? { start: o.arrowStart, end: o.arrowEnd } : {};
+        const [x2, y2] = v.toPdf(...(shift ? snap45(sx, sy, cx, cy) : ([cx, cy] as [number, number])));
+        const heads = tool === "arrow" ? { start: o.arrowStart, end: o.arrowEnd, headSize: o.arrowSize } : {};
         return { id, pageId, type: tool, x1, y1, x2, y2, color: o.color, width: o.strokeWidth, ...heads };
       }
       if (!SHAPE_TOOLS.includes(tool)) return null;
@@ -567,6 +581,9 @@ export class AnnotationOverlay implements Decorator {
         const half = (o.highlightH * v.scale) / 2;
         const ex = Math.abs(cx - sx) >= 3 ? cx : sx + o.highlightW * v.scale;
         box = boxFromView(v, sx, sy - half, ex, sy + half);
+      } else if (shift && (tool === "rect" || tool === "ellipse" || tool === "shape")) {
+        const d = Math.max(Math.abs(cx - sx), Math.abs(cy - sy));
+        box = boxFromView(v, sx, sy, sx + Math.sign(cx - sx || 1) * d, sy + Math.sign(cy - sy || 1) * d);
       } else {
         box = boxFromView(v, sx, sy, cx, cy);
       }
@@ -599,6 +616,7 @@ export class AnnotationOverlay implements Decorator {
           }
         }
         [cx, cy] = this.local(slot, ev);
+        shift = ev.shiftKey;
       },
       () => {
         const cur = build();
@@ -727,6 +745,42 @@ export class AnnotationOverlay implements Decorator {
    * pointer. Images and text keep their proportions (text scales its font);
    * hold Shift to stretch an image freely.
    */
+  /** Move one end of a line or arrow; the other end stays. */
+  private dragEnd(slot: Slot, e: PointerEvent, id: string, end: 1 | 2): void {
+    e.stopPropagation();
+    const v = slot.view;
+    const s0 = this.state;
+    const a0 = s0.annotations.find((a) => a.id === id);
+    if (!a0 || (a0.type !== "line" && a0.type !== "arrow")) return;
+    let cx = 0,
+      cy = 0,
+      shift = false,
+      moved = false;
+    // The end that stays, on screen: Shift snaps the moving end around it in 45° steps.
+    const [fx, fy] = end === 1 ? v.toView(a0.x2, a0.y2) : v.toView(a0.x1, a0.y1);
+    trackPointer(
+      e,
+      slot.layers,
+      (ev) => {
+        [cx, cy] = this.local(slot, ev);
+        shift = ev.shiftKey;
+        moved = true;
+      },
+      () => {
+        if (!moved) return;
+        const [px, py] = v.toPdf(...(shift ? snap45(fx, fy, cx, cy) : ([cx, cy] as [number, number])));
+        const next = end === 1 ? { ...a0, x1: px, y1: py } : { ...a0, x2: px, y2: py };
+        this.history.replace({ ...s0, annotations: s0.annotations.map((a) => (a.id === id ? next : a)) });
+      },
+      () => {
+        if (!moved) return;
+        const final = this.state;
+        this.history.replace(s0);
+        this.history.push(final);
+      },
+    );
+  }
+
   private dragResize(slot: Slot, e: PointerEvent, id: string): void {
     e.stopPropagation();
     const v = slot.view;
@@ -1053,6 +1107,14 @@ function showNotePop(a: Extract<Annotation, { type: "note" }>, r: DOMRect): void
 
 function hideNotePop(): void {
   notePop?.remove();
+}
+
+/** (bx, by) turned around (ax, ay) to the nearest 45° step, same length. */
+export function snap45(ax: number, ay: number, bx: number, by: number): [number, number] {
+  const len = Math.hypot(bx - ax, by - ay);
+  const step = Math.PI / 4;
+  const ang = Math.round(Math.atan2(by - ay, bx - ax) / step) * step;
+  return [ax + Math.cos(ang) * len, ay + Math.sin(ang) * len];
 }
 
 function distToSegment(px: number, py: number, x0: number, y0: number, x1: number, y1: number): number {

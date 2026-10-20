@@ -19,10 +19,14 @@ function commands(): Command[] {
   for (const el of items) {
     if ((el as HTMLButtonElement).disabled || !(el.dataset.action || el.dataset.pageOp || el.dataset.pro || el.dataset.view)) continue;
     const label = (el.querySelector(".menu-label")?.textContent ?? el.textContent ?? "").trim();
-    const top = el.closest(".menu")?.querySelector<HTMLElement>(".menu-top");
-    const sub = el.closest(".menu-subwrap")?.querySelector(":scope > .menu-item .menu-label");
-    const path = [top && top !== el ? top.textContent : "", sub?.textContent ?? ""].filter(Boolean).join(" › ");
-    const english = [top?.dataset.menu ?? "", el.dataset.label ?? ""].join(" ");
+    // The menus above it, outermost first (File › Import).
+    const heads: HTMLElement[] = [];
+    for (let w = el.parentElement?.closest<HTMLElement>(".menu-subwrap"); w; w = w.parentElement?.closest<HTMLElement>(".menu-subwrap") ?? null) {
+      const h = w.querySelector<HTMLElement>(":scope > .menu-item");
+      if (h && h !== el) heads.unshift(h);
+    }
+    const path = heads.map((h) => h.querySelector(".menu-label")?.textContent ?? "").filter(Boolean).join(" › ");
+    const english = [...heads.map((h) => h.dataset.menu ?? ""), el.dataset.label ?? ""].join(" ");
     out.push({ el, label, path, keys: el.querySelector(".menu-keys")?.textContent ?? "", hay: `${label} ${path} ${english}`.toLowerCase() });
   }
   return out;

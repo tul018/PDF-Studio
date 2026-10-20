@@ -87,7 +87,7 @@ export class TabBar {
     const plus = document.createElement("button");
     plus.className = "tab-new";
     plus.dataset.tabNew = "";
-    plus.textContent = "+";
+    plus.textContent = "+ Open";
     plus.title = "Open another file in a new tab (Ctrl+O)";
     this.el.replaceChildren(...items, plus);
   }

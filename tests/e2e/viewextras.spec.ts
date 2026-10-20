@@ -30,7 +30,7 @@ test("zoom to area, snapshot to the clipboard, layers and attachments", async ({
 
   await cmd(page, '[data-action="layers"]');
   await expect(page.locator(".modal")).toContainText("This document has no layers.");
-  await page.getByRole("button", { name: "Close" }).click();
+  await page.locator(".modal").getByRole("button", { name: "Close" }).click();
   await cmd(page, '[data-action="attachments"]');
   await expect(page.locator(".modal")).toContainText("no attached files");
 });

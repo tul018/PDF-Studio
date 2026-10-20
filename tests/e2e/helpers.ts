@@ -32,13 +32,13 @@ export async function pageBox(page: Page, n: number) {
   return b;
 }
 
-/** Run a menu command: open its menu (and submenu), click the item. */
+/** Run a menu command: open Menu, each submenu above the item (File, Import...), click the item. */
 export async function cmd(page: Page, selector: string): Promise<void> {
   const item = page.locator(`.menubar ${selector}`).first();
   if (await item.evaluate((el) => el.classList.contains("menu-top"))) return item.click();
-  const inner = page.locator(selector);
-  await page.locator(".menubar .menu").filter({ has: inner }).locator("> .menu-top").click();
-  const sub = page.locator(".menubar .menu-subwrap").filter({ has: inner });
-  if (await sub.count()) await sub.locator("> .menu-item").hover();
+  await page.locator(".menubar .menu-top").click();
+  const subs = page.locator(".menubar .menu-subwrap").filter({ has: page.locator(selector) });
+  const n = await subs.count();
+  for (let i = 0; i < n; i++) await subs.nth(i).locator("> .menu-item").hover();
   await item.click();
 }

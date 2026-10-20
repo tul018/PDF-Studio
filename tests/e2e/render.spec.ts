@@ -1,13 +1,13 @@
 import { expect, test } from "@playwright/test";
-import { openPdf, stats } from "./helpers";
+import { openPdf, stats, cmd } from "./helpers";
 
 test("rendering engine: switch between graphics card and processor", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await openPdf(page, "basic.pdf");
-  await page.locator('.tool-bar [data-action="pageNumbers"]').click();
+  await cmd(page, '[data-action="pageNumbers"]');
   await page.getByRole("button", { name: "Add page numbers" }).click();
-  await page.locator('.menubar [data-action="settings"]').click();
+  await cmd(page, '[data-action="settings"]');
   // Automatic is the default; switch to whichever engine it didn't pick here.
   const engine = page.locator(".modal select").nth(3);
   await expect(engine).toHaveValue("auto");

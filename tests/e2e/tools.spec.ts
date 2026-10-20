@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { PDFDocument, PDFDict, PDFName } from "pdf-lib";
-import { fixture, openPdf, pageBox, saveAndRead } from "./helpers";
+import { cmd, fixture, openPdf, pageBox, saveAndRead } from "./helpers";
 import { pageTexts } from "./pdftext";
 
 type A = { type: string; box?: { w: number; h: number }; fontSize?: number; font?: string; opacity?: number; color?: string };
@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => {
 
 test("clicking an active tool again turns it off; so does its key", async ({ page }) => {
   await openPdf(page, "basic.pdf");
-  const rect = page.locator('.tool-bar [data-tool="rect"]');
+  const rect = page.locator('.quick-tools [data-tool="rect"]');
   await rect.click();
   await expect(page.locator("body")).toHaveAttribute("data-active-tool", "rect");
   await rect.click();
@@ -126,7 +126,7 @@ test("text: frame fits the text, font and custom size, corner drag scales", asyn
 test("image resize: the corner follows the mouse", async ({ page }) => {
   await openPdf(page, "basic.pdf");
   const chooser = page.waitForEvent("filechooser");
-  await page.locator('.tool-bar [data-action="image"]').click();
+  await cmd(page, '[data-action="image"]');
   await (await chooser).setFiles(fixture("seal.png"));
   await expect(page.locator(".resize-handle")).toBeVisible();
   const [before] = await annots(page);
@@ -148,19 +148,19 @@ test("image resize: the corner follows the mouse", async ({ page }) => {
 });
 
 test("theme toggle sits at the top right; zoom - and + are next to the zoom box", async ({ page }) => {
-  const btn = page.locator(".main-bar #theme-btn");
+  const btn = page.locator("#theme-btn");
   await expect(btn).toBeVisible();
   const before = await page.evaluate(() => document.documentElement.dataset.theme ?? "");
   await btn.click();
   const after = await page.evaluate(() => document.documentElement.dataset.theme);
   expect(after).not.toBe(before);
   await expect(page.locator('.menubar [data-action="theme"]')).toHaveCount(0);
-  const bar = (await page.locator(".main-bar").boundingBox())!;
+  const bar = (await page.locator(".titlebar").boundingBox())!;
   const tb = (await btn.boundingBox())!;
   expect(bar.x + bar.width - (tb.x + tb.width)).toBeLessThan(24);
   await openPdf(page, "basic.pdf");
-  const zo = (await page.locator('.zoom-group [data-action="zoomOut"]').boundingBox())!;
-  const zi = (await page.locator('.zoom-group [data-action="zoomIn"]').boundingBox())!;
+  const zo = (await page.locator('.nav-pill [data-action="zoomOut"]').boundingBox())!;
+  const zi = (await page.locator('.nav-pill [data-action="zoomIn"]').boundingBox())!;
   const zs = (await page.locator("#zoom-select").boundingBox())!;
   expect(zi.x - (zo.x + zo.width)).toBeLessThan(zs.width + 12);
 });

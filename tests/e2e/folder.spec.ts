@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("search a folder of PDFs (no document open), open a result at its page", async ({ page }) => {
-  await page.getByRole("button", { name: "Search a folder of PDFs…" }).click();
+  await page.locator('.home [data-action="folderSearch"]').click();
   const panel = page.locator('[data-panel="folder"]');
   await expect(panel).toBeVisible();
   const chooser = page.waitForEvent("filechooser");

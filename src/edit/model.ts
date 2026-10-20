@@ -83,6 +83,8 @@ export interface LineAnnot extends AnnotBase {
   /** Arrow heads at each end (absent: an arrow's end is an open head). */
   start?: HeadStyle;
   end?: HeadStyle;
+  /** Arrow head size: 1 = normal (4 x the line width, at least 8 pt). */
+  headSize?: number;
   x1: number;
   y1: number;
   x2: number;
@@ -332,8 +334,12 @@ export function annotationBounds(a: Annotation): [number, number, number, number
       return [x0 - p, y0 - p, x1 + p, y1 + p];
     }
     case "line":
-    case "arrow":
-      return [Math.min(a.x1, a.x2), Math.min(a.y1, a.y2), Math.max(a.x1, a.x2), Math.max(a.y1, a.y2)];
+    case "arrow": {
+      // Room for the heads (and the stroke) around both ends.
+      const hasHead = (a.start ?? "none") !== "none" || (a.end ?? (a.type === "arrow" ? "open" : "none")) !== "none";
+      const p = hasHead ? Math.max(8, a.width * 4) * (a.headSize ?? 1) : a.width / 2 + 2;
+      return [Math.min(a.x1, a.x2) - p, Math.min(a.y1, a.y2) - p, Math.max(a.x1, a.x2) + p, Math.max(a.y1, a.y2) + p];
+    }
     case "note":
       return [a.x, a.y - 20, a.x + 20, a.y];
     default:

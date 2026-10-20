@@ -344,6 +344,10 @@ export class Viewer {
     this.scroller.scrollTop = Math.max(0, y);
     if (x !== null) this.scroller.scrollLeft = Math.max(0, x);
     this.setCurrent(index);
+    // The page jumped to stays current until the reader scrolls (a point near a
+    // page's bottom would otherwise count as the next page).
+    this.pinIndex = index;
+    this.pinTop = this.scroller.scrollTop;
     this.requestUpdate();
   }
 
@@ -437,6 +441,9 @@ export class Viewer {
     this.scroller.scrollLeft = this.pageLeft(i) + a.fx * size.width - ax;
   }
 
+  private pinIndex: number | null = null;
+  private pinTop = 0;
+
   private setCurrent(i: number): void {
     if (i !== this.current) {
       this.current = i;
@@ -497,7 +504,8 @@ export class Viewer {
     const top = this.scroller.scrollTop;
     const bottom = top + this.scroller.clientHeight;
     const [first, last] = this.layout.visibleRange(top, bottom);
-    const mid = this.layout.indexAt(top + this.scroller.clientHeight * 0.4);
+    if (this.pinIndex !== null && Math.abs(top - this.pinTop) > 2) this.pinIndex = null;
+    const mid = this.pinIndex ?? this.layout.indexAt(top + this.scroller.clientHeight * 0.4);
     this.setCurrent(Math.max(0, mid));
 
     const pf = this.profile.prefetchPages;

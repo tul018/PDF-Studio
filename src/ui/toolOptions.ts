@@ -24,7 +24,7 @@ const FONT_NAMES: [TextFont, string][] = [
 const fontLabel = (f: TextFont) => FONT_NAMES.find(([v]) => v === f)?.[1] ?? f;
 
 /** "shape": box, circle and shapes, which have a fill as well as an outline. */
-type Context = "" | "line" | "shape" | "text" | "hl";
+type Context = "" | "line" | "arrow" | "shape" | "text" | "hl";
 const FILL_TOOLS: Tool[] = ["rect", "ellipse", "shape"];
 const FILL_TYPES = ["rect", "ellipse", "shape", "cloud"];
 const FILL_COLORS = ["#ffeb3b", "#ffcdd2", "#bbdefb", "#c8e6c9", "#e1bee7", "#ffffff", "#9e9e9e", "#000000"];
@@ -91,13 +91,15 @@ export class ToolOptionsUI {
       if (a.type === "highlight") return "hl";
       if (a.type === "text") return "text";
       if (FILL_TYPES.includes(a.type)) return "shape";
-      if (a.type === "ink" || a.type === "line" || a.type === "arrow" || a.type === "rect" || a.type === "ellipse" || a.type === "cloud" || a.type === "shape") return "line";
+      if (a.type === "line" || a.type === "arrow") return "arrow";
+      if (a.type === "ink") return "line";
       return "";
     }
     const t = this.tool();
     if (t === "highlight") return "hl";
     if (t === "text") return "text";
     if (FILL_TOOLS.includes(t)) return "shape";
+    if (t === "arrow") return "arrow";
     return LINE_TOOLS.includes(t) ? "line" : "";
   }
 
@@ -122,6 +124,7 @@ export class ToolOptionsUI {
     if (patch.fillOpacity !== undefined) style.fillOpacity = patch.fillOpacity;
     if (patch.arrowStart) style.arrowStart = patch.arrowStart;
     if (patch.arrowEnd) style.arrowEnd = patch.arrowEnd;
+    if (patch.arrowSize) style.arrowSize = patch.arrowSize;
     if (Object.keys(style).length) for (const o of this.overlays()) o.styleSelected(style);
     this.sync();
   }
@@ -151,6 +154,13 @@ export class ToolOptionsUI {
     $<HTMLInputElement>("#opt-fill-op").value = String(fop);
     $("#opt-fill-op-val").textContent = `${fop}%`;
     $(".opt-fill").classList.toggle("off", !fl);
+    const [hs, he] = a && (a.type === "arrow" || a.type === "line") ? headsOf(a) : [o.arrowStart, o.arrowEnd];
+    $<HTMLSelectElement>("#opt-head-start").value = hs;
+    $<HTMLSelectElement>("#opt-head-end").value = he;
+    const size = a && (a.type === "arrow" || a.type === "line") ? (a.headSize ?? 1) : o.arrowSize;
+    setSelect($<HTMLSelectElement>("#opt-head-size"), String(size), `${Math.round(size * 100)}%`);
+    // Shape… only for the Shape tool or a selected shape / cloud.
+    $(".opt-shapemenu").hidden = !(a ? a.type === "shape" || a.type === "cloud" : this.tool() === "shape");
     const font = (a?.type === "text" ? a.font : o.font) ?? "sans";
     setSelect($<HTMLSelectElement>("#opt-family"), font, fontLabel(font));
     if (document.activeElement !== $("#opt-font")) $<HTMLInputElement>("#opt-font").value = String(a?.type === "text" ? a.fontSize : o.fontSize);
@@ -189,6 +199,17 @@ export class ToolOptionsUI {
         applySize();
         size.blur();
       }
+    });
+    // Arrow heads and their size.
+    $<HTMLSelectElement>("#opt-head-start").addEventListener("change", (e) => this.set({ arrowStart: (e.target as HTMLSelectElement).value as HeadStyle }));
+    $<HTMLSelectElement>("#opt-head-end").addEventListener("change", (e) => this.set({ arrowEnd: (e.target as HTMLSelectElement).value as HeadStyle }));
+    $<HTMLSelectElement>("#opt-head-size").addEventListener("change", (e) => this.set({ arrowSize: parseFloat((e.target as HTMLSelectElement).value) }));
+    // Shape… opens the shape menu from the bar (edits the selected shape).
+    $<HTMLElement>(".opt-shapemenu").addEventListener("click", (e) => {
+      e.stopPropagation();
+      const b = e.currentTarget as HTMLElement;
+      if (this.pop?.dataset.popTool === "shape") return this.closeMenu();
+      this.openMenu("shape", b);
     });
     // Fill of boxes, circles and shapes: on/off, colour, how solid.
     const fillOn = $<HTMLInputElement>("#opt-fill-on");
@@ -525,6 +546,7 @@ function sanitize(s: Partial<ToolOptions>): Partial<ToolOptions> {
   const heads = ["none", "open", "closed", "circle", "bar"];
   if (heads.includes(s.arrowStart as string)) out.arrowStart = s.arrowStart;
   if (heads.includes(s.arrowEnd as string)) out.arrowEnd = s.arrowEnd;
+  if (num(s.arrowSize, 0.3, 4)) out.arrowSize = s.arrowSize;
   if (s.fillColor === "none" || hex(s.fillColor)) out.fillColor = s.fillColor;
   if (num(s.fillOpacity, 0.05, 1)) out.fillOpacity = s.fillOpacity;
   if (num(s.strokeWidth, 0, 50)) out.strokeWidth = s.strokeWidth;

@@ -7,7 +7,7 @@ test("quick save button; auto-save toggle is remembered and shows a check", asyn
   await openPdf(page, "basic.pdf");
   await page.locator('.pageops [data-page-op="rotR"]').click();
   const dl = page.waitForEvent("download");
-  await page.locator('.main-bar .quick [data-action="save"]').click();
+  await page.locator('.main-bar .right [data-action="save"]').click();
   expect((await dl).suggestedFilename()).toBe("basic.pdf");
 
   const item = page.locator('.menubar [data-action="autosave"]');

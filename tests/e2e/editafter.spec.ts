@@ -32,8 +32,8 @@ test("box: fill and outline changed after drawing; picture replaced in place; co
   await (await pick).setFiles(fixture("seal.png"));
   const img = page.locator(".annot image");
   const before = (await img.boundingBox())!;
-  await expect(page.locator('.tool-bar [data-action="replaceImage"]')).toBeVisible();
-  await page.locator('.tool-bar [data-action="replaceImage"]').click();
+  await expect(page.locator('.props-bar [data-action="replaceImage"]')).toBeVisible();
+  await page.locator('.props-bar [data-action="replaceImage"]').click();
   const pick2 = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Picture from file…" }).click();
   await (await pick2).setFiles(fixture("seal.png"));
@@ -50,7 +50,7 @@ test("box: fill and outline changed after drawing; picture replaced in place; co
   await page.keyboard.press("v");
   const note = (await page.locator(".annot.note").boundingBox())!;
   await page.mouse.click(note.x + note.width / 2, note.y + note.height / 3);
-  await page.locator('.tool-bar [data-action="editNote"]').click();
+  await page.locator('.props-bar [data-action="editNote"]').click();
   await page.locator(".modal-input").fill("Second");
   await page.locator(".modal .btn.primary").click();
   await page.mouse.move(note.x + note.width / 2, note.y + note.height / 3 + 1);
