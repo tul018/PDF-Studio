@@ -90,17 +90,24 @@ test("drawing tool: a plain click on empty space goes back to Select", async ({ 
   expect(await page.evaluate(() => document.body.dataset.activeTool)).toBe("select");
 });
 
-test("Select: press and hold, then move, drags the document", async ({ page }) => {
+test("Select: a drag on an empty spot drags the document at once; on text it selects", async ({ page }) => {
   await openPdf(page, "basic.pdf");
   const b = await pageBox(page, 1);
   const scroller = page.locator(".pane.active .viewer");
   const top0 = await scroller.evaluate((el) => el.scrollTop);
+  // Empty part of the page, a fast drag: pans.
   await page.mouse.move(b.x + 300, b.y + 500);
   await page.mouse.down();
-  await page.waitForTimeout(350); // hold
-  await page.mouse.move(b.x + 300, b.y + 300, { steps: 8 });
+  await page.mouse.move(b.x + 300, b.y + 300, { steps: 2 });
   await page.mouse.up();
   const top1 = await scroller.evaluate((el) => el.scrollTop);
   expect(top1 - top0).toBeGreaterThan(150);
   expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
+  // On text: no pan (the drag selects text).
+  const span = (await page.locator(".pane.active .textLayer span", { hasText: "quick brown" }).first().boundingBox())!;
+  await page.mouse.move(span.x + 2, span.y + span.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(span.x + span.width - 2, span.y + span.height / 2, { steps: 4 });
+  await page.mouse.up();
+  expect(await scroller.evaluate((el) => el.scrollTop)).toBe(top1);
 });

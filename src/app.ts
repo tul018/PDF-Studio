@@ -317,13 +317,13 @@ export class App {
   // ================================================================ panes
 
   /**
-   * Select tool: press and hold, then move, to drag the document (a quick
-   * drag still selects text). Around the pages, where there's no text, a
-   * drag pans right away.
+   * Select tool: dragging where there's no text (empty page, around the
+   * pages) drags the document right away. On text a drag selects it; press
+   * and hold a moment first to drag the document from there.
    */
   private holdToPan(scroller: HTMLElement, e: PointerEvent): void {
     if (e.pointerType !== "mouse") return; // touch scrolls by itself
-    const onPage = !!(e.target as Element).closest(".page");
+    const onText = !!(e.target as Element).closest(".textLayer span");
     const x0 = e.clientX,
       y0 = e.clientY;
     let panning = false,
@@ -334,12 +334,13 @@ export class App {
       window.getSelection()?.removeAllRanges();
       document.body.classList.add("panning");
     };
-    const timer = onPage ? window.setTimeout(start, 250) : 0;
+    const timer = onText ? window.setTimeout(start, 200) : 0;
     const move = (ev: PointerEvent) => {
       if (!panning) {
-        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
-        // Moved before the hold: a text selection (on a page) or a pan (around it).
-        if (onPage) return end();
+        // A little wiggle while holding still is fine.
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < (onText ? 8 : 3)) return;
+        // On text, moving before the hold selects text; anywhere else it pans.
+        if (onText) return end();
         start();
       }
       window.getSelection()?.removeAllRanges();
