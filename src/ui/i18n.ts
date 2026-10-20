@@ -13,6 +13,7 @@ type Dict = Record<string, string>;
 type Templates = [string, string][];
 
 const TH: Dict = {
+  "Print": "พิมพ์", "All of them": "ทุกหน้าที่เลือก", "Odd pages only": "เฉพาะหน้าคี่", "Even pages only": "เฉพาะหน้าคู่", "1 page per sheet": "1 หน้าต่อแผ่น", "2 pages per sheet": "2 หน้าต่อแผ่น", "4 pages per sheet": "4 หน้าต่อแผ่น", "6 pages per sheet": "6 หน้าต่อแผ่น", "Booklet (fold in half)": "หนังสือเล่มเล็ก (พับครึ่ง)", "Paper": "กระดาษ", "Same as the pages": "เท่ากับขนาดหน้า", "Orientation": "แนวกระดาษ", "Automatic": "อัตโนมัติ", "Portrait": "แนวตั้ง", "Landscape": "แนวนอน", "Reverse order": "เรียงย้อนกลับ", "Black and white (grayscale)": "ขาวดำ (โทนเทา)", "Print on both sides, flipping on the short edge, then fold the stack in half.": "พิมพ์สองหน้าแบบพลิกด้านสั้น แล้วพับครึ่งทั้งปึก", "Several pages per sheet are printed on A4 unless you choose a paper size.": "หลายหน้าต่อแผ่นจะพิมพ์บน A4 ถ้าไม่ได้เลือกขนาดกระดาษ", "Previous sheet": "แผ่นก่อน", "Next sheet": "แผ่นถัดไป", "Nothing to print": "ไม่มีอะไรให้พิมพ์", "Rendering pages for printing…": "กำลังเตรียมหน้าสำหรับพิมพ์…", "Preparing to print…": "กำลังเตรียมพิมพ์…",
   "Comments": "ความเห็น", "Your name": "ชื่อของคุณ", "Shown on your comments": "แสดงบนความเห็นของคุณ", "All": "ทั้งหมด", "Done": "เสร็จแล้ว", "Reopen": "เปิดอีกครั้ง", "Reply": "ตอบกลับ", "Reply…": "ตอบกลับ…", "Show": "แสดง", "No comments. Use the Comment tool (N) and click on the page.": "ยังไม่มีความเห็น ใช้เครื่องมือความเห็น (N) แล้วคลิกบนหน้า", "Cloud": "เมฆ", "Cloud (C)": "รูปเมฆ (C)", "Eraser": "ยางลบ", "Eraser: drag over pen strokes (E)": "ยางลบ: ลากผ่านเส้นที่วาด (E)",
   "Find a command…": "ค้นหาคำสั่ง…", "Find a command": "ค้นหาคำสั่ง", "Type a command…": "พิมพ์ชื่อคำสั่ง…", "Type a command": "พิมพ์ชื่อคำสั่ง", "No matching command": "ไม่พบคำสั่ง", "Commands": "คำสั่ง",
   "Revert to saved": "กลับไปฉบับที่บันทึก", "Revert to saved?": "กลับไปฉบับที่บันทึกไว้?", "This removes the changes made since the file was last saved. You can still bring them back with Undo.": "การแก้ไขหลังการบันทึกครั้งล่าสุดจะถูกเอาออก ยังกู้คืนได้ด้วยเลิกทำ", "Revert": "ย้อนกลับ", "No unsaved changes.": "ไม่มีการแก้ไขที่ยังไม่บันทึก", "Back to the saved version.": "กลับไปฉบับที่บันทึกแล้ว",
@@ -98,6 +99,7 @@ const TH: Dict = {
 };
 
 const ZH: Dict = {
+  "Print": "打印", "All of them": "全部", "Odd pages only": "仅奇数页", "Even pages only": "仅偶数页", "1 page per sheet": "每张 1 页", "2 pages per sheet": "每张 2 页", "4 pages per sheet": "每张 4 页", "6 pages per sheet": "每张 6 页", "Booklet (fold in half)": "小册子（对折）", "Paper": "纸张", "Same as the pages": "与页面相同", "Orientation": "方向", "Automatic": "自动", "Portrait": "纵向", "Landscape": "横向", "Reverse order": "倒序", "Black and white (grayscale)": "黑白（灰度）", "Print on both sides, flipping on the short edge, then fold the stack in half.": "双面打印（短边翻转），然后整叠对折。", "Several pages per sheet are printed on A4 unless you choose a paper size.": "每张多页时默认使用 A4，除非选择纸张大小。", "Previous sheet": "上一张", "Next sheet": "下一张", "Nothing to print": "没有可打印的内容", "Rendering pages for printing…": "正在准备打印页面…", "Preparing to print…": "正在准备打印…",
   "Comments": "批注", "Your name": "你的名字", "Shown on your comments": "显示在你的批注上", "All": "全部", "Done": "已完成", "Reopen": "重新打开", "Reply": "回复", "Reply…": "回复…", "Show": "显示", "No comments. Use the Comment tool (N) and click on the page.": "暂无批注。使用批注工具 (N) 并点击页面。", "Cloud": "云形", "Cloud (C)": "云形 (C)", "Eraser": "橡皮擦", "Eraser: drag over pen strokes (E)": "橡皮擦：拖过笔画 (E)",
   "Find a command…": "查找命令…", "Find a command": "查找命令", "Type a command…": "输入命令…", "Type a command": "输入命令", "No matching command": "没有匹配的命令", "Commands": "命令",
   "Revert to saved": "恢复到已保存版本", "Revert to saved?": "恢复到已保存版本？", "This removes the changes made since the file was last saved. You can still bring them back with Undo.": "这会移除上次保存后的更改。仍可用撤销恢复。", "Revert": "恢复", "No unsaved changes.": "没有未保存的更改。", "Back to the saved version.": "已恢复到保存的版本。",
@@ -172,6 +174,7 @@ const TEMPLATES: Record<Exclude<Lang, "en">, Templates> = {
     ["Searching… {n} of {n} files{s}", "กำลังค้นหา… {n} จาก {n} ไฟล์{s}"],
     ["{n} matches in {n} of {n} files{s}", "พบ {n} รายการ ใน {n} จาก {n} ไฟล์{s}"],
     ["{n} found · searching {n}%", "พบ {n} · กำลังค้นหา {n}%"],
+    ["Sheet {n} of {n}", "แผ่นที่ {n} จาก {n}"],
     ["{n} of {n}", "{n} จาก {n}"],
     ["No results", "ไม่พบ"],
     ["No matches", "ไม่พบ"],
@@ -183,6 +186,7 @@ const TEMPLATES: Record<Exclude<Lang, "en">, Templates> = {
     ["Searching… {n} of {n} files{s}", "正在搜索… 第 {n}/{n} 个文件{s}"],
     ["{n} matches in {n} of {n} files{s}", "在 {n}/{n} 个文件中找到 {n} 处{s}"],
     ["{n} found · searching {n}%", "已找到 {n} · 搜索中 {n}%"],
+    ["Sheet {n} of {n}", "第 {n} 张，共 {n} 张"],
     ["{n} of {n}", "{n}/{n}"],
     ["No results", "无结果"],
     ["No matches", "无结果"],

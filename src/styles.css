@@ -556,3 +556,16 @@ textarea.modal-input { height: 110px; padding: 8px; resize: vertical; }
 .live-invite { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
 .live-invite .btn { align-self: flex-start; }
 .live-status { margin: 4px 0; }
+
+/* print dialog: options on the left, the sheet preview on the right */
+.modal.print-dialog { width: min(760px, 96vw); max-width: 96vw; }
+.print-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; align-items: start; }
+.print-preview { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.print-frame { width: 260px; height: 300px; display: flex; align-items: center; justify-content: center; background: var(--surface-2); border-radius: 8px; }
+.print-frame canvas { max-width: 240px; max-height: 280px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25); background: #fff; }
+.print-nav { display: flex; align-items: center; gap: 8px; }
+.print-count { min-width: 110px; text-align: center; }
+@media (max-width: 640px) {
+  .print-grid { grid-template-columns: 1fr; }
+  .print-frame { width: 100%; }
+}

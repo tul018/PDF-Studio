@@ -43,7 +43,7 @@ import { CommentsPanel, savedAuthor } from "./viewer/commentsPanel";
 import { ToolOptionsUI } from "./ui/toolOptions";
 import { ocrPdf } from "./save/ocr";
 import { aboutDialog, shortcutsDialog } from "./ui/decorDialogs";
-import { cutDialog, ocrDialog, protectDialog, photosDialog, settingsDialog, shrinkDialog, exportImagesDialog, pageNumbersDialog, extractDialog, mergeDialog, stampDialog, type ExtractMode, type PageChoice, watermarkDialog } from "./ui/decorDialogs";
+import { cutDialog, ocrDialog, protectDialog, photosDialog, settingsDialog, shrinkDialog, exportImagesDialog, pageNumbersDialog, printDialog, type PrintChoice, extractDialog, mergeDialog, stampDialog, type ExtractMode, type PageChoice, watermarkDialog } from "./ui/decorDialogs";
 import { cutPages } from "./edit/cut";
 import { CompareView } from "./compare/compareView";
 import { forgetRecent, mapDocIds, newTab, recentFiles, rememberRecent, TabBar, type Tab, type TabSnapshot } from "./tabs";
@@ -54,7 +54,8 @@ import { NativeSource, Platform } from "./platform/platform";
 import { buildPdf } from "./save/saver";
 import { choiceDialog, confirmDialog, progressOverlay, promptText, signaturePad, toast } from "./ui/dialogs";
 import { icon } from "./ui/icons";
-import { printPdf } from "./ui/print";
+import { drawSheet, openPrintJob, printSheets, type PrintJob } from "./ui/print";
+import { PAPER, choosePages, planSheets } from "./print/layout";
 import { FormLinkLayer } from "./viewer/formLayer";
 import { attachGestures } from "./viewer/gestures";
 import { FolderPanel } from "./viewer/folderPanel";
@@ -1034,15 +1035,39 @@ export class App {
     for (const p of this.panes) p.overlay.commitTextEdit();
     const busy = progressOverlay("Preparing to print…");
     const ac = new AbortController();
+    let job: PrintJob | null = null;
     try {
       const bytes = await buildPdf(this.history.state, this.store, this.images, {
-        onProgress: (_l, f) => busy.update("Preparing to print…", f * 0.3),
+        onProgress: (_l, f) => busy.update("Preparing to print…", f),
       });
-      await printPdf(bytes, (f) => busy.update("Rendering pages for printing…", 0.3 + f * 0.7), ac.signal);
+      job = await openPrintJob(bytes);
+      busy.close();
+      const j = job;
+      const plan = (c: PrintChoice) => {
+        const chosen = choosePages(this.pageIndices(c), c.subset, c.reverse);
+        const sheets = planSheets(chosen, c.layout, (i) => j.sizes[i][0] > j.sizes[i][1], c.orientation);
+        // Several pages per sheet need real paper: A4 unless one is chosen.
+        const paper = c.paper !== "auto" ? PAPER[c.paper] : c.layout === 1 ? null : PAPER.A4;
+        return { sheets, style: { paper, gray: c.gray } };
+      };
+      const choice = await printDialog(this.thumbs.selected.size, this.history.state.pages.length, async (c, n) => {
+        const { sheets, style } = plan(c);
+        if (!sheets.length) return { canvas: null, sheets: 0 };
+        return { canvas: await drawSheet(j, sheets[n], style, 40), sheets: sheets.length };
+      });
+      if (!choice) return;
+      const { sheets, style } = plan(choice);
+      const rendering = progressOverlay("Rendering pages for printing…");
+      try {
+        await printSheets(j, sheets, style, (f) => rendering.update("Rendering pages for printing…", f), ac.signal);
+      } finally {
+        rendering.close();
+      }
     } catch (e) {
       toast(`Print failed: ${(e as Error).message}`, "error");
     } finally {
       busy.close();
+      await job?.close();
     }
   }
 

@@ -12,6 +12,7 @@ import {
 } from "../edit/stamps";
 import { buttons, modal, promptText, title, toast } from "./dialogs";
 import { parsePages } from "../save/split";
+import { PAPER, type Layout, type Subset } from "../print/layout";
 
 /** Dialogs for stamps, page numbers and watermarks. Choices are remembered. */
 
@@ -976,5 +977,185 @@ export async function aboutDialog(): Promise<void> {
     box.appendChild(table);
     escClose(box, close);
     buttons(box, [{ label: "Close", primary: true, onClick: close }]);
+  });
+}
+
+// ------------------------------------------------------------------ print
+
+const PRINT_KEY = "pdfstudio:print";
+
+export interface PrintChoice {
+  pages: PageChoice;
+  ranges: string;
+  subset: Subset;
+  reverse: boolean;
+  layout: Layout;
+  /** "auto" = each page's own size (one per sheet), A4 otherwise. */
+  paper: string;
+  orientation: "auto" | "portrait" | "landscape";
+  gray: boolean;
+}
+
+/**
+ * Print: which pages, how many per sheet (or a booklet), paper, grayscale,
+ * with a live preview of each sheet. The printer, copies and two-sided
+ * printing are chosen in the system print dialog that opens next.
+ */
+export function printDialog(
+  selected: number,
+  total: number,
+  preview: (c: PrintChoice, sheet: number) => Promise<{ canvas: HTMLCanvasElement | null; sheets: number }>,
+): Promise<PrintChoice | null> {
+  const o = remember<PrintChoice>(PRINT_KEY, {
+    pages: "all",
+    ranges: "",
+    subset: "all",
+    reverse: false,
+    layout: 1,
+    paper: "auto",
+    orientation: "auto",
+    gray: false,
+  });
+  return new Promise((resolve) => {
+    modal((box, close) => {
+      box.classList.add("print-dialog");
+      title(box, "Print");
+      const grid = document.createElement("div");
+      grid.className = "print-grid";
+      const form = document.createElement("div");
+      const side = document.createElement("div");
+      side.className = "print-preview";
+      grid.append(form, side);
+      box.append(grid);
+
+      const pages = pageChoice(form, selected, total, o.pages, o.ranges);
+      const subset = select(
+        [
+          ["all", "All of them"],
+          ["odd", "Odd pages only"],
+          ["even", "Even pages only"],
+        ],
+        o.subset,
+      );
+      row(form, "Print", subset);
+      const layout = select(
+        [
+          ["1", "1 page per sheet"],
+          ["2", "2 pages per sheet"],
+          ["4", "4 pages per sheet"],
+          ["6", "6 pages per sheet"],
+          ["booklet", "Booklet (fold in half)"],
+        ],
+        String(o.layout),
+      );
+      row(form, "Layout", layout);
+      const paper = select([["auto", "Same as the pages"], ...Object.keys(PAPER).map((k): [string, string] => [k, k])], o.paper);
+      row(form, "Paper", paper);
+      const orient = select(
+        [
+          ["auto", "Automatic"],
+          ["portrait", "Portrait"],
+          ["landscape", "Landscape"],
+        ],
+        o.orientation,
+      );
+      const orientRow = row(form, "Orientation", orient);
+      const reverse = check(form, "Reverse order", o.reverse);
+      const gray = check(form, "Black and white (grayscale)", o.gray);
+      const hint = document.createElement("p");
+      hint.className = "muted small";
+      form.append(hint);
+
+      const frame = document.createElement("div");
+      frame.className = "print-frame";
+      const nav = document.createElement("div");
+      nav.className = "print-nav";
+      const prev = document.createElement("button");
+      prev.className = "btn small";
+      prev.textContent = "‹";
+      prev.setAttribute("aria-label", "Previous sheet");
+      const label = document.createElement("span");
+      label.className = "small print-count";
+      const next = document.createElement("button");
+      next.className = "btn small";
+      next.textContent = "›";
+      next.setAttribute("aria-label", "Next sheet");
+      nav.append(prev, label, next);
+      side.append(frame, nav);
+
+      const choice = (): PrintChoice | null => {
+        const p = pages.value();
+        if (!p) return null;
+        return {
+          ...p,
+          subset: subset.value as Subset,
+          reverse: reverse.checked,
+          layout: layout.value === "booklet" ? "booklet" : (Number(layout.value) as Layout),
+          paper: paper.value,
+          orientation: orient.value as PrintChoice["orientation"],
+          gray: gray.checked,
+        };
+      };
+      let sheet = 0;
+      let count = 0;
+      let ticket = 0;
+      let timer = 0;
+      const refresh = () => {
+        const booklet = layout.value === "booklet";
+        orientRow.hidden = booklet;
+        hint.textContent = booklet
+          ? "Print on both sides, flipping on the short edge, then fold the stack in half."
+          : paper.value === "auto" && layout.value !== "1"
+            ? "Several pages per sheet are printed on A4 unless you choose a paper size."
+            : "";
+        clearTimeout(timer);
+        timer = window.setTimeout(async () => {
+          const c = choice();
+          if (!c) return;
+          const mine = ++ticket;
+          const res = await preview(c, sheet).catch(() => ({ canvas: null, sheets: 0 }));
+          if (mine !== ticket) return;
+          count = res.sheets;
+          if (sheet >= count && count) {
+            sheet = count - 1;
+            return refresh();
+          }
+          frame.replaceChildren(...(res.canvas ? [res.canvas] : []));
+          label.textContent = count ? `Sheet ${sheet + 1} of ${count}` : "Nothing to print";
+          prev.disabled = sheet <= 0;
+          next.disabled = sheet >= count - 1;
+        }, 120);
+      };
+      prev.addEventListener("click", () => {
+        if (sheet > 0) (sheet--, refresh());
+      });
+      next.addEventListener("click", () => {
+        if (sheet < count - 1) (sheet++, refresh());
+      });
+      for (const el of [pages.select, subset, layout, paper, orient, reverse, gray]) el.addEventListener("change", () => ((sheet = 0), refresh()));
+      pages.input.addEventListener("input", () => ((sheet = 0), refresh()));
+
+      const done = (v: PrintChoice | null) => {
+        if (v) store(PRINT_KEY, v);
+        clearTimeout(timer);
+        ticket++;
+        close();
+        resolve(v);
+      };
+      escClose(box, () => done(null));
+      buttons(box, [
+        { label: "Cancel", onClick: () => done(null) },
+        {
+          label: "Print…",
+          primary: true,
+          onClick: () => {
+            const c = choice();
+            if (c && count) done(c);
+          },
+        },
+      ]);
+      refresh();
+      requestAnimationFrame(() => pages.select.focus());
+    });
   });
 }
