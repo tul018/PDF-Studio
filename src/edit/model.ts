@@ -85,6 +85,8 @@ export interface LineAnnot extends AnnotBase {
   end?: HeadStyle;
   /** Arrow head size: 1 = normal (4 x the line width, at least 8 pt). */
   headSize?: number;
+  /** 0..1 (absent = solid). */
+  opacity?: number;
   x1: number;
   y1: number;
   x2: number;

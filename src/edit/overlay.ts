@@ -67,6 +67,8 @@ export interface ToolOptions {
   arrowStart: HeadStyle;
   arrowEnd: HeadStyle;
   arrowSize: number;
+  /** Outline / line opacity for drawing, boxes, circles, shapes, lines, arrows (0..1). */
+  lineOpacity: number;
 }
 
 export function defaultToolOptions(): ToolOptions {
@@ -86,6 +88,7 @@ export function defaultToolOptions(): ToolOptions {
     arrowStart: "none",
     arrowEnd: "open",
     arrowSize: 1,
+    lineOpacity: 1,
   };
 }
 
@@ -174,7 +177,7 @@ export class AnnotationOverlay implements Decorator {
 
   /** Recolor / restyle the selected annotation. */
   styleSelected(
-    patch: Partial<{ color: string; strokeWidth: number; fontSize: number; font: TextFont; opacity: number; shape: ShapeSpec; fillColor: string; fillOpacity: number; arrowStart: HeadStyle; arrowEnd: HeadStyle; arrowSize: number }>,
+    patch: Partial<{ color: string; strokeWidth: number; fontSize: number; font: TextFont; opacity: number; shape: ShapeSpec; fillColor: string; fillOpacity: number; arrowStart: HeadStyle; arrowEnd: HeadStyle; arrowSize: number; lineOpacity: number }>,
   ): void {
     const a = this.selected;
     if (!a) return;
@@ -190,6 +193,15 @@ export class AnnotationOverlay implements Decorator {
     if ((a.type === "arrow" || a.type === "line") && patch.arrowStart) p.start = patch.arrowStart;
     if ((a.type === "arrow" || a.type === "line") && patch.arrowEnd) p.end = patch.arrowEnd;
     if ((a.type === "arrow" || a.type === "line") && patch.arrowSize) p.headSize = patch.arrowSize;
+    if (patch.lineOpacity !== undefined && a.type !== "highlight" && a.type !== "whiteout" && a.type !== "redact" && ("opacity" in a || a.type === "line" || a.type === "arrow")) {
+      // An older shape filled "light"/"solid" in its outline colour keeps that fill.
+      if (fillable && a.fillColor === undefined && fillOf(a)) {
+        const f = fillOf(a)!;
+        p.fillColor = f.color;
+        p.fillOpacity = f.opacity;
+      }
+      p.opacity = patch.lineOpacity;
+    }
     if (patch.color && "color" in a && a.color !== patch.color) p.color = patch.color;
     if (patch.strokeWidth !== undefined && "strokeWidth" in a && a.type !== "highlight" && a.strokeWidth !== patch.strokeWidth && (patch.strokeWidth > 0 || fillable))
       p.strokeWidth = patch.strokeWidth;
@@ -381,7 +393,7 @@ export class AnnotationOverlay implements Decorator {
       }
       case "line":
       case "arrow": {
-        const g = svg("g", { stroke: a.color, "stroke-width": a.width, "stroke-linecap": "round", fill: "none" });
+        const g = svg("g", { stroke: a.color, "stroke-width": a.width, "stroke-linecap": "round", fill: "none", opacity: a.opacity ?? 1 });
         g.appendChild(svg("line", { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2 }));
         const [hs, he] = headsOf(a);
         for (const part of [headPart(hs, a.x2, a.y2, a.x1, a.y1, a.width, a.headSize), headPart(he, a.x1, a.y1, a.x2, a.y2, a.width, a.headSize)]) {
@@ -566,12 +578,12 @@ export class AnnotationOverlay implements Decorator {
     // Shift: lines snap to 45° steps; boxes, circles and shapes are drawn square.
     let shift = e.shiftKey;
     const build = (): Annotation | null => {
-      if (tool === "ink") return { id, pageId, type: "ink", points: pts.slice(), color: o.color, width: o.strokeWidth, opacity: 1 };
+      if (tool === "ink") return { id, pageId, type: "ink", points: pts.slice(), color: o.color, width: o.strokeWidth, opacity: o.lineOpacity };
       if (tool === "line" || tool === "arrow") {
         const [x1, y1] = v.toPdf(sx, sy);
         const [x2, y2] = v.toPdf(...(shift ? snap45(sx, sy, cx, cy) : ([cx, cy] as [number, number])));
         const heads = tool === "arrow" ? { start: o.arrowStart, end: o.arrowEnd, headSize: o.arrowSize } : {};
-        return { id, pageId, type: tool, x1, y1, x2, y2, color: o.color, width: o.strokeWidth, ...heads };
+        return { id, pageId, type: tool, x1, y1, x2, y2, color: o.color, width: o.strokeWidth, opacity: o.lineOpacity, ...heads };
       }
       if (!SHAPE_TOOLS.includes(tool)) return null;
       let box: Box;
@@ -595,7 +607,7 @@ export class AnnotationOverlay implements Decorator {
         box,
         color: isHl ? o.highlightColor : o.color,
         strokeWidth: isHl ? 0 : o.strokeWidth,
-        opacity: isHl ? o.highlightOpacity : 1,
+        opacity: isHl ? o.highlightOpacity : tool === "whiteout" || tool === "redact" ? 1 : o.lineOpacity,
         ...(tool === "shape" ? { spec: { ...o.shape } } : {}),
         ...(tool === "shape" || tool === "rect" || tool === "ellipse" ? { fillColor: o.fillColor, fillOpacity: o.fillOpacity } : {}),
       };

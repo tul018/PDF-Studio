@@ -65,7 +65,7 @@ export class ToolOptionsUI {
       }),
     );
     document.addEventListener("pointerdown", (e) => {
-      if (this.pop && !this.pop.contains(e.target as Node) && !(e.target as Element).closest?.("[data-tool-menu]")) this.closeMenu();
+      if (this.pop && !this.pop.contains(e.target as Node) && !(e.target as Element).closest?.("[data-tool-menu], [data-open-menu]")) this.closeMenu();
     });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && this.pop) {
@@ -125,6 +125,7 @@ export class ToolOptionsUI {
     if (patch.arrowStart) style.arrowStart = patch.arrowStart;
     if (patch.arrowEnd) style.arrowEnd = patch.arrowEnd;
     if (patch.arrowSize) style.arrowSize = patch.arrowSize;
+    if (patch.lineOpacity !== undefined) style.lineOpacity = patch.lineOpacity;
     if (Object.keys(style).length) for (const o of this.overlays()) o.styleSelected(style);
     this.sync();
   }
@@ -159,6 +160,9 @@ export class ToolOptionsUI {
     $<HTMLSelectElement>("#opt-head-end").value = he;
     const size = a && (a.type === "arrow" || a.type === "line") ? (a.headSize ?? 1) : o.arrowSize;
     setSelect($<HTMLSelectElement>("#opt-head-size"), String(size), `${Math.round(size * 100)}%`);
+    const lop = Math.round((a && a.type !== "highlight" && "opacity" in a ? (a.opacity ?? 1) : a && (a.type === "line" || a.type === "arrow") ? (a.opacity ?? 1) : o.lineOpacity) * 100);
+    $<HTMLInputElement>("#opt-line-op").value = String(lop);
+    $("#opt-line-op-val").textContent = `${lop}%`;
     // Shape… only for the Shape tool or a selected shape / cloud.
     $(".opt-shapemenu").hidden = !(a ? a.type === "shape" || a.type === "cloud" : this.tool() === "shape");
     const font = (a?.type === "text" ? a.font : o.font) ?? "sans";
@@ -200,6 +204,13 @@ export class ToolOptionsUI {
         size.blur();
       }
     });
+    // Outline opacity: one undo step per slider drag.
+    const lineOp = $<HTMLInputElement>("#opt-line-op");
+    lineOp.addEventListener("input", () => ($("#opt-line-op-val").textContent = `${lineOp.value}%`));
+    lineOp.addEventListener("change", () => {
+      this.set({ lineOpacity: Number(lineOp.value) / 100 });
+      lineOp.blur(); // shortcut keys work again
+    });
     // Arrow heads and their size.
     $<HTMLSelectElement>("#opt-head-start").addEventListener("change", (e) => this.set({ arrowStart: (e.target as HTMLSelectElement).value as HeadStyle }));
     $<HTMLSelectElement>("#opt-head-end").addEventListener("change", (e) => this.set({ arrowEnd: (e.target as HTMLSelectElement).value as HeadStyle }));
@@ -218,14 +229,20 @@ export class ToolOptionsUI {
     fillOn.addEventListener("change", () => this.set({ fillColor: fillOn.checked ? fillColor.value : "none" }));
     fillColor.addEventListener("input", () => this.set({ fillColor: fillColor.value }));
     fillOp.addEventListener("input", () => ($("#opt-fill-op-val").textContent = `${fillOp.value}%`));
-    fillOp.addEventListener("change", () => this.set({ fillOpacity: Number(fillOp.value) / 100, ...(fillOn.checked ? {} : { fillColor: fillColor.value }) }));
+    fillOp.addEventListener("change", () => {
+      this.set({ fillOpacity: Number(fillOp.value) / 100, ...(fillOn.checked ? {} : { fillColor: fillColor.value }) });
+      fillOp.blur();
+    });
     const opacity = $<HTMLInputElement>("#opt-opacity");
     opacity.addEventListener("input", () => {
       $("#opt-opacity-val").textContent = `${opacity.value}%`;
       this.opts.highlightOpacity = Number(opacity.value) / 100;
     });
     // One undo step per slider drag, not one per pixel.
-    opacity.addEventListener("change", () => this.set({ highlightOpacity: Number(opacity.value) / 100 }));
+    opacity.addEventListener("change", () => {
+      this.set({ highlightOpacity: Number(opacity.value) / 100 });
+      opacity.blur();
+    });
   }
 
   // ------------------------------------------------------------ drop-downs
@@ -399,6 +416,9 @@ export class ToolOptionsUI {
       }),
       heading("Outline"),
       lineSw,
+      range(Math.round(((a && "opacity" in a && a.type !== "highlight" ? a.opacity : this.opts.lineOpacity) ?? 1) * 100), 10, 100, (v, done) => {
+        if (done) this.set({ lineOpacity: v / 100 });
+      }),
       note("Select a shape to change its fill or outline later (also in the strip above)."),
     );
   }
@@ -547,6 +567,7 @@ function sanitize(s: Partial<ToolOptions>): Partial<ToolOptions> {
   if (heads.includes(s.arrowStart as string)) out.arrowStart = s.arrowStart;
   if (heads.includes(s.arrowEnd as string)) out.arrowEnd = s.arrowEnd;
   if (num(s.arrowSize, 0.3, 4)) out.arrowSize = s.arrowSize;
+  if (num(s.lineOpacity, 0.05, 1)) out.lineOpacity = s.lineOpacity;
   if (s.fillColor === "none" || hex(s.fillColor)) out.fillColor = s.fillColor;
   if (num(s.fillOpacity, 0.05, 1)) out.fillOpacity = s.fillOpacity;
   if (num(s.strokeWidth, 0, 50)) out.strokeWidth = s.strokeWidth;

@@ -428,17 +428,18 @@ async function drawAnnotation(
     case "line":
     case "arrow": {
       const color = hexToRgb(a.color);
+      const opacity = a.opacity ?? 1;
       const line = (x1: number, y1: number, x2: number, y2: number) =>
-        page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness: a.width, color, lineCap: LineCapStyle.Round });
+        page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness: a.width, color, opacity, lineCap: LineCapStyle.Round });
       line(a.x1, a.y1, a.x2, a.y2);
       const [hs, he] = headsOf(a);
       for (const part of [headPart(hs, a.x2, a.y2, a.x1, a.y1, a.width, a.headSize), headPart(he, a.x1, a.y1, a.x2, a.y2, a.width, a.headSize)]) {
         if (!part) continue;
-        if (part.kind === "circle") page.drawCircle({ x: part.cx, y: part.cy, size: part.r, color });
+        if (part.kind === "circle") page.drawCircle({ x: part.cx, y: part.cy, size: part.r, color, opacity });
         else if (part.kind === "fill") {
           // drawSvgPath flips y, so feed it -y.
           const d = part.points.map(([px, py], i) => `${i ? "L" : "M"} ${px} ${-py}`).join(" ") + " Z";
-          page.drawSvgPath(d, { x: 0, y: 0, color, borderColor: color, borderWidth: a.width });
+          page.drawSvgPath(d, { x: 0, y: 0, color, opacity, borderColor: color, borderWidth: a.width, borderOpacity: opacity });
         } else for (let i = 1; i < part.points.length; i++) line(part.points[i - 1][0], part.points[i - 1][1], part.points[i][0], part.points[i][1]);
       }
       return;

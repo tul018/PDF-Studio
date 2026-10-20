@@ -67,3 +67,29 @@ test("Shift snaps a line to 45° steps and draws a square box", async ({ page })
   const box = (await page.locator(".annot rect").last().boundingBox())!;
   expect(Math.abs(box.width - box.height)).toBeLessThan(2);
 });
+
+test("outline opacity: a selected box and arrow", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await openPdf(page, "basic.pdf");
+  const b = await pageBox(page, 1);
+  await page.keyboard.press("r");
+  await page.mouse.move(b.x + 100, b.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(b.x + 250, b.y + 380, { steps: 4 });
+  await page.mouse.up();
+  await page.keyboard.press("v");
+  await page.mouse.click(b.x + 101, b.y + 301);
+  await page.locator("#opt-line-op").fill("40");
+  await expect(page.locator(".annot rect").first()).toHaveAttribute("stroke-opacity", "0.4");
+
+  await page.keyboard.press("l");
+  await page.mouse.move(b.x + 100, b.y + 500);
+  await page.mouse.down();
+  await page.mouse.move(b.x + 300, b.y + 500, { steps: 4 });
+  await page.mouse.up();
+  await page.keyboard.press("v");
+  await page.mouse.click(b.x + 200, b.y + 500);
+  await page.locator("#opt-line-op").fill("60");
+  await expect(page.locator(".annot[opacity]").last()).toHaveAttribute("opacity", "0.6");
+});
