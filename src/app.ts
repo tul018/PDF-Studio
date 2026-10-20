@@ -18,6 +18,7 @@ import {
   rotatePages,
   TEXT_FONTS,
   uid,
+  type Annotation,
   type EditState,
   type PageRef,
   type StoredImage,
@@ -123,6 +124,8 @@ export class App {
   private canvasChangePending = false;
   private folderPanel!: FolderPanel;
   private comments!: CommentsPanel;
+  /** Pages copied or cut with Ctrl+C / Ctrl+X, with their annotations. */
+  private pageClip: { pages: PageRef[]; annotations: Annotation[] } | null = null;
   /** Next open goes to a given place (folder search result): skip restoring the last position. */
   private skipRestoreView = false;
   private reader = new ReadAloud(
@@ -324,6 +327,7 @@ export class App {
     this.bindSearchBar(pane);
 
     overlay.author = savedAuthor();
+    overlay.onCrop = (pageId, rect) => void this.cropFromDrag(pageId, rect);
     overlay.onRequestNoteText = (initial) =>
       promptText(initial ? "Edit comment" : "Add comment", initial, { multiline: true, placeholder: "Comment…" });
     overlay.onSelectionChange = (a) => {
@@ -727,6 +731,7 @@ export class App {
     for (const im of this.images.values()) URL.revokeObjectURL(im.url);
     this.images.clear();
     this.marks.clear();
+    this.pageClip = null; // its pages belong to the documents closing now
     await this.store.closeAll();
     this.mainDoc = null;
     $("#outline").replaceChildren();
@@ -1249,6 +1254,59 @@ export class App {
     return cur ? [cur] : [];
   }
 
+  /** Crop tool: keep the dragged part of this page, or of the selected / all pages. */
+  private async cropFromDrag(pageId: string, rect: number[]): Promise<void> {
+    const s = this.history.state;
+    const sel = this.thumbs.selected;
+    const opts = ["This page"];
+    if (sel.size > 1 && sel.has(pageId)) opts.push(`Selected pages (${sel.size})`);
+    opts.push(`All pages (${s.pages.length})`, "Cancel");
+    const pick = await choiceDialog("Crop pages", "Keep only the part inside the frame. Undo or Edit › Pages › Remove crop brings the rest back.", opts);
+    const label = opts[pick];
+    if (pick < 0 || label === "Cancel") return;
+    const all = label.startsWith("All");
+    const ids = label.startsWith("Selected") ? sel : new Set(all ? s.pages.map((p) => p.id) : [pageId]);
+    const pages = s.pages.map((p) => {
+      if (!ids.has(p.id) || !p.docId) return p;
+      // Inside what the page shows now (a page cut or cropped before stays inside).
+      const v = this.store.viewBox(p);
+      const c = [Math.max(v[0], rect[0]), Math.max(v[1], rect[1]), Math.min(v[2], rect[2]), Math.min(v[3], rect[3])];
+      return c[2] - c[0] > 4 && c[3] - c[1] > 4 ? { ...p, crop: c } : p;
+    });
+    this.history.push({ ...s, pages });
+    this.setTool("select");
+  }
+
+  /** Ctrl+C / Ctrl+X on pages: keep them (and their annotations) to paste. */
+  private copyPages(cut: boolean): void {
+    const s = this.history.state;
+    const pages = this.selectedPages();
+    if (!pages.length) return;
+    if (cut && pages.length >= s.pages.length) return void toast("A PDF must keep at least one page.", "error");
+    const ids = new Set(pages.map((p) => p.id));
+    this.pageClip = { pages, annotations: s.annotations.filter((a) => ids.has(a.pageId)) };
+    if (cut) {
+      this.history.push(deletePages(s, ids));
+      this.thumbs.clearSelection();
+    }
+    toast(`${cut ? "Cut" : "Copied"} ${pages.length} page${pages.length === 1 ? "" : "s"}. Paste with Ctrl+V after the page you choose.`);
+  }
+
+  /** Paste copied pages after the current page (new copies each time). */
+  private pastePages(): void {
+    const clip = this.pageClip;
+    if (!clip) return void toast("Copy or cut pages first (select them in the sidebar, Ctrl+C).", "info");
+    const s = this.history.state;
+    const newId = new Map(clip.pages.map((p) => [p.id, uid("p")]));
+    const pages = clip.pages.map((p) => ({ ...p, id: newId.get(p.id)! }));
+    const annotations = clip.annotations.map((a) => ({ ...a, id: uid("a"), pageId: newId.get(a.pageId)! }));
+    const at = Math.min(s.pages.length, this.activeViewer.currentIndex + 1);
+    const next = insertPages(s, at, pages);
+    this.history.push({ ...next, annotations: [...next.annotations, ...annotations] });
+    this.activeViewer.scrollToPage(at);
+    toast(`Pasted ${pages.length} page${pages.length === 1 ? "" : "s"}.`, "ok");
+  }
+
   private pageOp(op: string): void {
     if (!this.mainDoc) return;
     const s = this.history.state;
@@ -1257,6 +1315,14 @@ export class App {
     switch (op) {
       case "rotL":
         this.history.push(rotatePages(s, ids, -90));
+        break;
+      case "copy":
+      case "cutClip":
+        return this.copyPages(op === "cutClip");
+      case "paste":
+        return this.pastePages();
+      case "uncrop":
+        this.history.push({ ...s, pages: s.pages.map((p) => (ids.has(p.id) && p.crop ? (({ crop: _c, ...rest }) => rest)(p) : p)) });
         break;
       case "rotR":
         this.history.push(rotatePages(s, ids, 90));
@@ -1707,6 +1773,9 @@ export class App {
         return void this.revert();
       case "palette":
         return openPalette();
+      case "cropTool":
+        this.setTool("crop");
+        return void toast("Drag a frame around the part of the page to keep.", "info", 5000);
       case "closeTab":
         return void this.closeTab(this.activeTab);
       case "shortcuts":
@@ -1839,6 +1908,15 @@ export class App {
       }
       if (t.closest("input, textarea, select, [contenteditable=true], .modal")) return;
       const k = e.key.toLowerCase();
+      // Pages: Ctrl+C / X with pages selected in the sidebar (and no text selected), Ctrl+V to paste them.
+      if (mod && !e.shiftKey && this.mainDoc && (k === "c" || k === "x") && this.thumbs.selected.size && (window.getSelection()?.isCollapsed ?? true)) {
+        e.preventDefault();
+        return this.copyPages(k === "x");
+      }
+      if (mod && !e.shiftKey && this.mainDoc && k === "v" && this.pageClip) {
+        e.preventDefault();
+        return this.pastePages();
+      }
       const v = this.activeViewer;
       if (mod) {
         const map: Record<string, () => void> = {

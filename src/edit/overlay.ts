@@ -29,6 +29,7 @@ export type Tool =
   | "ellipse"
   | "cloud"
   | "eraser"
+  | "crop"
   | "line"
   | "arrow"
   | "ink"
@@ -103,6 +104,8 @@ export class AnnotationOverlay implements Decorator {
   private editing: { id: string; ta: HTMLTextAreaElement; before?: EditState } | null = null;
   onSelectionChange: (a: Annotation | null) => void = () => {};
   onRequestNoteText: (initial: string) => Promise<string | null> = async () => null;
+  /** Crop tool: a rectangle (user space [x0, y0, x1, y1]) was dragged on a page. */
+  onCrop: (pageId: string, rect: number[]) => void = () => {};
   /** Name put on new comments and replies. */
   author = "";
 
@@ -447,6 +450,7 @@ export class AnnotationOverlay implements Decorator {
     }
 
     if (tool === "eraser") return this.dragErase(slot, e);
+    if (tool === "crop") return this.dragCrop(slot, e);
 
     if (tool === "note") {
       const [x, y] = v.toPdf(sx, sy);
@@ -530,6 +534,37 @@ export class AnnotationOverlay implements Decorator {
         if ("box" in c && (c.box.w < 3 || c.box.h < 3)) return;
         if ((c.type === "line" || c.type === "arrow") && Math.hypot(c.x2 - c.x1, c.y2 - c.y1) < 3) return;
         this.history.push(addAnnotation(s0, c));
+      },
+    );
+  }
+
+  /** Crop: drag the part of the page to keep; a dashed frame shows it. */
+  private dragCrop(slot: Slot, e: PointerEvent): void {
+    const v = slot.view;
+    const [sx, sy] = this.local(slot, e);
+    let cx = sx,
+      cy = sy;
+    const frame = document.createElement("div");
+    frame.className = "crop-frame";
+    slot.el.appendChild(frame);
+    trackPointer(
+      e,
+      slot.layers,
+      (ev) => ([cx, cy] = this.local(slot, ev)),
+      () => {
+        Object.assign(frame.style, {
+          left: Math.min(sx, cx) + "px",
+          top: Math.min(sy, cy) + "px",
+          width: Math.abs(cx - sx) + "px",
+          height: Math.abs(cy - sy) + "px",
+        });
+      },
+      () => {
+        frame.remove();
+        if (Math.abs(cx - sx) < 8 || Math.abs(cy - sy) < 8) return;
+        const [ax, ay] = v.toPdf(sx, sy);
+        const [bx, by] = v.toPdf(cx, cy);
+        this.onCrop(slot.ref.id, [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)]);
       },
     );
   }
