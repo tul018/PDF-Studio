@@ -87,3 +87,34 @@ jobs:
             src-tauri/gen/apple/build/**/*.ipa
             src-tauri/gen/apple/build/**/*.app
           if-no-files-found: warn
+
+  macos:
+    name: macOS DMG Installer
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build macOS installer
+        run: npm run app:build -- --bundles dmg
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDF-Studio-macOS
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
