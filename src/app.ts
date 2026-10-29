@@ -769,7 +769,6 @@ export class App {
           else this.restoreView();
           void this.offerRecovery();
         });
-        if (main.encrypted) toast("Protected PDF: saving edits removes the password (pages saved as images).", "info", 6000);
       } else {
         let s = this.history.state;
         for (const d of loaded) s = insertPages(s, s.pages.length, pagesForDoc(d.id, d.numPages));
@@ -992,23 +991,18 @@ export class App {
     if (!this.mainDoc) return false;
     for (const p of this.panes) p.overlay.commitTextEdit();
     const usedDocs = [...new Set(this.history.state.pages.map((p) => p.docId))];
-    const locked = usedDocs.map((id) => (id ? this.store.docs.get(id) : undefined)).find((d) => d?.encrypted);
-    if (locked && !protect) {
+    // Files that open without a password (encrypted only to set permissions,
+    // like many bank forms) are saved as normal, editable PDFs without asking.
+    const locked = usedDocs.map((id) => (id ? this.store.docs.get(id) : undefined)).find((d) => d?.encrypted && d.password);
+    if (locked?.password && !protect) {
       // Keep the protection by default, with the password it was opened with.
       const c = await choiceDialog(
         "This PDF is password-protected",
-        "Save it with the same password? (Its pages are saved as images, so text can't be selected or searched yet.)",
+        "Save it with the same password?",
         ["Cancel", "Remove the password", "Keep the password"],
       );
       if (c === 0) return false;
-      if (c === 2) {
-        if (locked.password) protect = { userPassword: locked.password };
-        else {
-          const p = await protectDialog();
-          if (!p) return false;
-          protect = p;
-        }
-      }
+      if (c === 2) protect = { userPassword: locked.password };
     }
     const totalBytes = usedDocs
       .map((id) => (id ? (this.store.docs.get(id)?.source.size ?? 0) : 0))

@@ -28,6 +28,22 @@ export async function buildPdf(
   images: Map<string, StoredImage>,
   opts: SaveOptions = {},
 ): Promise<Uint8Array> {
+  try {
+    return await build(state, store, images, opts, false);
+  } catch (e) {
+    // An encryption the saver can't undo: fall back to saving those pages as images.
+    if ((e as Error)?.name !== "UnsupportedEncryptionError") throw e;
+    return build(state, store, images, opts, true);
+  }
+}
+
+async function build(
+  state: EditState,
+  store: DocumentStore,
+  images: Map<string, StoredImage>,
+  opts: SaveOptions,
+  rasterEncrypted: boolean,
+): Promise<Uint8Array> {
   const progress = opts.onProgress ?? (() => {});
   const pages = opts.pages ?? state.pages;
   const byPage = new Map<string, Annotation[]>();
@@ -43,7 +59,7 @@ export async function buildPdf(
   const fontFiles: Record<string, Uint8Array | null> = {};
   const usedImages = new Set<string>();
   let rastered = 0;
-  const rasterTotal = pages.filter((p) => mustRaster(p, byPage, store)).length;
+  const rasterTotal = pages.filter((p) => mustRaster(p, byPage, store, rasterEncrypted)).length;
 
   for (const ref of pages) {
     const annotations = byPage.get(ref.id) ?? [];
@@ -55,7 +71,7 @@ export async function buildPdf(
       crop: ref.crop,
       annotations,
     };
-    if (mustRaster(ref, byPage, store)) {
+    if (mustRaster(ref, byPage, store, rasterEncrypted)) {
       progress("Applying redactions", rastered / Math.max(1, rasterTotal));
       pp.raster = await rasterizePage(ref, store, annotations.filter((a) => a.type === "redact"));
       rastered++;
@@ -94,14 +110,14 @@ export async function buildPdf(
     if (im) imgs[id] = { bytes: im.bytes.slice(), mime: im.mime };
   }
 
-  const plan: SavePlan = { sources, pages: planPages, formValues, images: imgs, textImages, sourceNames: Object.fromEntries([...needBytes].map((id) => [id, store.docs.get(id)!.source.name.replace(/[.]pdf$/i, "")])), fontFiles: Object.fromEntries(Object.entries(fontFiles).filter((e): e is [string, Uint8Array] => !!e[1])), nativeAnnotations: localStorage.getItem("pdfstudio:nativeAnnotations") === "1", incremental: localStorage.getItem("pdfstudio:incremental") === "1", protect: opts.protect, pageLabels: opts.pages ? undefined : state.pageLabels?.slice() };
+  const plan: SavePlan = { sources, pages: planPages, formValues, images: imgs, textImages, sourceNames: Object.fromEntries([...needBytes].map((id) => [id, store.docs.get(id)!.source.name.replace(/[.]pdf$/i, "")])), fontFiles: Object.fromEntries(Object.entries(fontFiles).filter((e): e is [string, Uint8Array] => !!e[1])), nativeAnnotations: localStorage.getItem("pdfstudio:nativeAnnotations") === "1", incremental: localStorage.getItem("pdfstudio:incremental") === "1", protect: opts.protect, pageLabels: opts.pages ? undefined : state.pageLabels?.slice(), passwords: Object.fromEntries([...needBytes].flatMap((id) => { const pw = store.docs.get(id)!.password; return pw ? [[id, pw]] : []; })) };
   progress("Writing PDF", 0);
   return runWorker(plan, transfer, (f) => progress("Writing PDF", f));
 }
 
-function mustRaster(ref: PageRef, byPage: Map<string, Annotation[]>, store: DocumentStore): boolean {
+function mustRaster(ref: PageRef, byPage: Map<string, Annotation[]>, store: DocumentStore, rasterEncrypted: boolean): boolean {
   if (!ref.docId) return false;
-  if (store.docs.get(ref.docId)?.encrypted) return true;
+  if (rasterEncrypted && store.docs.get(ref.docId)?.encrypted) return true;
   return (byPage.get(ref.id) ?? []).some((a) => a.type === "redact");
 }
 

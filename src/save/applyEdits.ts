@@ -3,6 +3,7 @@ import { nativeAnnotation } from "../professional/nativeAnnotations";
 import {
   BlendMode,
   degrees,
+  EncryptedPDFError,
   LineCapStyle,
   PDFBool,
   PDFCheckBox,
@@ -26,6 +27,7 @@ import {
 import fontkit from "@pdf-lib/fontkit";
 import { DEFAULT_SHAPE, fillOf, headPart, headsOf, shapePath } from "../edit/shapes";
 import { cloudPath, rotVec, textLines, type PageLabelRule, type Annotation, type Box, type FormValue, type TextFont } from "../edit/model";
+import { decryptPdf, UnsupportedEncryptionError } from "./decrypt";
 import { saveEncrypted, type Protection } from "./encrypt";
 import { copyDocumentStructure, detachPageLinks, pruneUnreachable, relinkPage, type PageTarget } from "./structure";
 
@@ -42,7 +44,7 @@ export interface PlanPage {
   blank?: { width: number; height: number };
   /** Show only this part of the page [x0, y0, x1, y1] ("Cut pages"): becomes its MediaBox/CropBox. */
   crop?: number[];
-  /** Rasterized replacement (true redaction / encrypted source). */
+  /** Rasterized replacement (true redaction / source with unsupported encryption). */
   raster?: { bytes: Uint8Array; view: number[]; rotate: number };
   annotations: Annotation[];
 }
@@ -65,6 +67,8 @@ export interface SavePlan {
   protect?: Protection;
   /** Page numbering to write as /PageLabels (replaces the file's own). */
   pageLabels?: PageLabelRule[];
+  /** docId -> the password an encrypted source was opened with (none = empty). */
+  passwords?: Record<string, string>;
 }
 
 export type Progress = (done: number, total: number) => void;
@@ -73,7 +77,22 @@ export async function applyEdits(plan: SavePlan, onProgress: Progress = () => {}
   const usedDocIds = [...new Set(plan.pages.filter((p) => !p.raster).map((p) => p.docId).filter((d): d is string => !!d))];
   const src = new Map<string, PDFDocument>();
   for (const id of usedDocIds) {
-    src.set(id, await PDFDocument.load(plan.sources[id], { updateMetadata: false }));
+    let doc: PDFDocument;
+    try {
+      doc = await PDFDocument.load(plan.sources[id], { updateMetadata: false });
+    } catch (e) {
+      if (!(e instanceof EncryptedPDFError) && !/is encrypted/.test(String((e as Error)?.message))) throw e;
+      // Protected file: decrypt so pages, text and form fields stay real
+      // (the saved copy is re-protected below if plan.protect is set).
+      try {
+        plan.sources[id] = await decryptPdf(plan.sources[id], plan.passwords?.[id]);
+      } catch (err) {
+        // The caller then saves these pages as images instead.
+        throw err instanceof UnsupportedEncryptionError ? err : new UnsupportedEncryptionError(String((err as Error)?.message ?? err));
+      }
+      doc = await PDFDocument.load(plan.sources[id], { updateMetadata: false });
+    }
+    src.set(id, doc);
   }
 
   const only = usedDocIds.length === 1 ? src.get(usedDocIds[0])! : null;
@@ -233,11 +252,11 @@ function fillForm(doc: PDFDocument, values: Record<string, FormValue>): boolean 
         const s = String(value ?? "");
         if (/[^\u0000-ÿ]/.test(s)) risky = true;
         field.setText(s);
+      } else if ((field instanceof PDFCheckBox || field instanceof PDFRadioGroup) && typeof value === "string") {
+        setButtonState(field, value);
       } else if (field instanceof PDFCheckBox) {
         if (value) field.check();
         else field.uncheck();
-      } else if (field instanceof PDFRadioGroup) {
-        if (typeof value === "string" && field.getOptions().includes(value)) field.select(value);
       } else if (field instanceof PDFDropdown) {
         const v = Array.isArray(value) ? value[0] : String(value);
         if (v != null) field.select(v);
@@ -250,6 +269,21 @@ function fillForm(doc: PDFDocument, values: Record<string, FormValue>): boolean 
     }
   }
   return risky;
+}
+
+/**
+ * Turn on the widget(s) whose appearance on-state is `value` ("Off" clears
+ * all). Viewer values are appearance-state names, which also covers boxes
+ * that share a field name with different on-values - pdf-lib's check() and
+ * select() only handle the first one, or need the /Opt export labels.
+ */
+function setButtonState(field: PDFCheckBox | PDFRadioGroup, value: string): void {
+  const on = PDFName.of(value);
+  const off = PDFName.of("Off");
+  const widgets = field.acroField.getWidgets();
+  const match = value !== "Off" && widgets.some((w) => w.getOnValue() === on);
+  field.acroField.dict.set(PDFName.of("V"), match ? on : off);
+  for (const w of widgets) w.setAppearanceState(match && w.getOnValue() === on ? on : off);
 }
 
 /**

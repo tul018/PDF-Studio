@@ -422,6 +422,8 @@ body[data-active-tool="text"] .page-layers { cursor: text; }
 .form-field:hover { border-color: rgba(37, 99, 235, 0.6); }
 .form-field:focus { border-color: var(--accent); background: rgba(255, 255, 255, 0.95); outline: none; }
 textarea.form-field { resize: none; }
+/* Comb fields: one character per printed box (spacing set per field). */
+.form-field.comb { font-family: "Courier New", Courier, monospace; padding-right: 0; }
 input[type="checkbox"].form-field, input[type="radio"].form-field { accent-color: #1e3a8a; }
 .pdf-link { position: absolute; pointer-events: auto; cursor: pointer; }
 body:not([data-active-tool="select"]) .pdf-link, body:not([data-active-tool="select"]) .form-field { pointer-events: none; }

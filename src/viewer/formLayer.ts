@@ -121,21 +121,34 @@ export class FormLinkLayer implements Decorator {
         if (a.maxLen && input instanceof HTMLInputElement) input.maxLength = a.maxLen;
         if (a.password && input instanceof HTMLInputElement) input.type = "password";
         input.style.fontSize = `${a.multiLine ? Math.min(fontPx, 12 * v.scale) : fontPx}px`;
+        if (a.comb && a.maxLen > 0 && input instanceof HTMLInputElement) {
+          // Comb field: spread the characters so each sits in its own printed box.
+          const cell = (r - l) / a.maxLen;
+          const glyph = Math.min(fontPx, cell * 1.2);
+          const gap = cell - glyph * 0.6; // Courier advance = 0.6 em
+          input.classList.add("comb");
+          Object.assign(input.style, { fontSize: `${glyph}px`, letterSpacing: `${gap}px`, paddingLeft: `${gap / 2}px` });
+        }
         input.addEventListener("change", () => this.set(key, input.value));
         el = input;
       } else if (a.fieldType === "Btn" && (a.checkBox || a.radioButton)) {
         const input = document.createElement("input");
         input.type = a.radioButton ? "radio" : "checkbox";
-        if (a.radioButton) {
-          input.name = key;
-          const cur = (stored as string) ?? a.fieldValue;
-          input.checked = cur != null && cur === a.buttonValue;
-          input.addEventListener("change", () => input.checked && this.set(key, a.buttonValue));
-        } else {
-          const cur = stored ?? (a.fieldValue && a.fieldValue !== "Off");
-          input.checked = Boolean(cur);
-          input.addEventListener("change", () => this.set(key, input.checked));
-        }
+        // Boxes sharing one field name (e.g. "Individual" / "Juristic person")
+        // each have their own on-value: only the box whose value is stored is ticked.
+        const onValue: string | undefined = a.radioButton ? a.buttonValue : a.exportValue;
+        input.dataset.fieldKey = key;
+        input.dataset.onValue = onValue ?? "";
+        if (a.radioButton) input.name = key;
+        const cur = stored ?? a.fieldValue;
+        input.checked =
+          typeof cur === "boolean" ? cur : cur != null && cur !== "Off" && (onValue == null || cur === onValue);
+        input.addEventListener("change", () => {
+          if (a.radioButton && !input.checked) return;
+          if (onValue == null) return this.set(key, input.checked);
+          this.set(key, input.checked ? onValue : "Off");
+          this.syncButtons(key, input.checked ? onValue : "Off");
+        });
         el = input;
       } else if (a.fieldType === "Ch") {
         const sel = document.createElement("select");
@@ -167,6 +180,13 @@ export class FormLinkLayer implements Decorator {
 
   private set(key: string, value: FormValue): void {
     this.history.push(setFormValue(this.history.state, key, value));
+  }
+
+  /** Other boxes of the same field, possibly on other mounted pages. */
+  private syncButtons(key: string, value: string): void {
+    for (const el of document.querySelectorAll<HTMLInputElement>(`.form-layer input[data-field-key="${CSS.escape(key)}"]`)) {
+      el.checked = value !== "Off" && el.dataset.onValue === value;
+    }
   }
 
   private async gotoDest(docId: string, dest: string | unknown[]): Promise<void> {
